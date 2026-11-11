@@ -35,7 +35,7 @@ public partial class GameClient
         content.AddChild(Text($"护山阵倍率 {battle.FormationBonus:F2} · {battle.Rounds}轮\n进攻方陨落{battle.AttackerDeaths}人；守方陨落{battle.DefenderDeaths}人。低一大境界伤害只有12%，每差一境递乘；总战力不能替代对局。", 15, Gold, true));
         var records = Stack(6);
         foreach (var exchange in battle.Exchanges.Take(60))
-            records.AddChild(Text($"{exchange.AttackerName}（{WorldFactory.RealmNames[exchange.AttackerRealm]}）→ {exchange.DefenderName}（{WorldFactory.RealmNames[exchange.DefenderRealm]}）\n{exchange.Hits}次出手 · 累计伤害{exchange.Damage:F1} · 境界倍率{exchange.RealmMultiplier:F3}", 13, exchange.RealmMultiplier < 1 ? Muted : Paper, true));
+            records.AddChild(Text($"{exchange.AttackerName}（{WorldFactory.RealmNames[exchange.AttackerRealm]}）→ {exchange.DefenderName}（{WorldFactory.RealmNames[exchange.DefenderRealm]}）\n{exchange.Hits}次出手 · 累计伤害{exchange.Damage:F1} · 境界倍率{exchange.RealmMultiplier:F3}{(exchange.RelicName == "" ? "" : $" · 当场御使{exchange.RelicName}（{new[] { "法器", "灵器", "法宝" }[exchange.RelicTier]}，{(exchange.RelicCategory == "attack" ? $"伤害 +{exchange.RelicBonus:P0}" : "护身，不增加战斗伤害")}）")}", 13, exchange.RealmMultiplier < 1 ? Muted : Paper, true));
         var scroll = Scroll(records); scroll.CustomMinimumSize = new Vector2(700, 380); content.AddChild(scroll);
         content.AddChild(Button("追溯此战因果", "battle-cause", () => ShowChronicle(battle.EventId)));
         ShowOverlay("战役对局 · 门人交锋", content);

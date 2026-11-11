@@ -1076,13 +1076,18 @@ public sealed class CoreGameTests
             }
         }
         ResolveEventsAndRebuild(world);
+        var saveJson = JsonSerializer.Serialize(world, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var saveBytes = System.Text.Encoding.UTF8.GetByteCount(saveJson);
+        TestContext.WriteLine($"longSaveCharacters={saveJson.Length}; longSaveUtf8Bytes={saveBytes}; relics={world.Relics.Count}; history={world.History.Count}");
+        Assert.IsLessThanOrEqualTo(64_000_000, saveJson.Length, "长期世界必须仍可写入当前存档字符上限");
 
         var playerLands = GameEngine.Lands(world, world.Player).Count;
         var survivingRivals = world.Sects.Count(sect => sect.Id != world.PlayerId && !sect.Eliminated);
         var victories = world.BattleReports.Count(report => report.AttackerWon);
         var defeats = world.BattleReports.Count - victories;
         var journeyStarts = world.History.Where(entry => entry.Kind == "journey" && entry.Title.EndsWith("下山历练")).ToList();
-        var journeyOutcomes = world.History.Count(entry => entry.Causes.Any(cause => journeyStarts.Any(start => start.Id == cause))
+        var journeyStartIds = journeyStarts.Select(start => start.Id).ToHashSet();
+        var journeyOutcomes = world.History.Count(entry => entry.Causes.Any(journeyStartIds.Contains)
             && entry.Kind is "journey" or "death");
         var campaignStarts = world.History.Count(entry => entry.Kind == "campaign" && entry.Title.Contains("远征"));
         var playerCampaignStarts = world.History.Count(entry => entry.Kind == "campaign"

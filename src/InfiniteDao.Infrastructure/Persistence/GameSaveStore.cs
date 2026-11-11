@@ -40,6 +40,7 @@ public sealed class GameSaveStore(string directory)
         try
         {
             var state = JsonSerializer.Deserialize<GameState>(json, Json) ?? throw new JsonException();
+            if (state.Relics.Any(r => r.Scope == "personal")) ValidatePersonalRelicFields(json);
             GameEngine.Validate(state);
             var templates = WorldFactory.Templates();
             if (state.Sects.Count == 6) templates = templates.Take(6).ToList();
@@ -65,6 +66,11 @@ public sealed class GameSaveStore(string directory)
                     person.Portrait = (int)((unchecked((uint)person.Id * 2654435761u) ^ unchecked((uint)state.Seed)) % WorldFactory.PortraitCount);
                 state.SchemaVersion = 2;
             }
+            if (state.SchemaVersion == 2)
+            {
+                state.SchemaVersion = 3;
+                GameEngine.Validate(state);
+            }
             return state;
         }
         catch (Exception error) when (error is JsonException or NullReferenceException or InvalidOperationException or ArgumentException)
@@ -72,6 +78,21 @@ public sealed class GameSaveStore(string directory)
     }
 
     private static bool SafeLabel(string value) => value.Length is > 0 and < 100 && !value.Any(c => c is '<' or '>' or '&' or '"' or '\'' || char.IsControl(c));
+
+    private static void ValidatePersonalRelicFields(string json)
+    {
+        var allowed = new HashSet<string>(["id", "name", "owner", "effect", "power", "foundMonth", "originEvent", "scope", "templateId", "holderId", "regionId", "keepAssigned", "lastEventId"], StringComparer.OrdinalIgnoreCase);
+        using var document = JsonDocument.Parse(json);
+        var relicProperties = document.RootElement.EnumerateObject().Where(p => p.Name.Equals("relics", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (relicProperties.Length != 1) throw new GameRuleException("个人法宝集合重复或缺失。");
+        foreach (var relic in relicProperties[0].Value.EnumerateArray())
+        {
+            var fields = relic.EnumerateObject().ToArray();
+            if (fields.Any(p => p.Name.Equals("scope", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() == "personal")
+                && (fields.Any(p => !allowed.Contains(p.Name)) || fields.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != fields.Length))
+                throw new GameRuleException("个人法宝包含不允许的额外属性。");
+        }
+    }
 
     public async Task<List<SaveSummary>> ListAsync()
     {

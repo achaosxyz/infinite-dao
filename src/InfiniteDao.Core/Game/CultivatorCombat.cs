@@ -9,11 +9,12 @@ public static partial class GameEngine
         ? Math.Pow(.12, defenderRealm - attackerRealm) : Math.Pow(1.35, attackerRealm - defenderRealm);
 
     private static double CultivatorHealth(Cultivator person) => 100 * Math.Pow(2, person.Realm) * (1 - person.Injury / 140d);
-    private static double CultivatorDamage(Cultivator person, int targetRealm) =>
-        22 * Math.Pow(2, person.Realm) * (.8 + person.Potential / 200d) * RealmDamageMultiplier(person.Realm, targetRealm);
+    private static double CultivatorDamage(GameState world, Cultivator person, int targetRealm) =>
+        22 * Math.Pow(2, person.Realm) * (.8 + person.Potential / 200d) * RealmDamageMultiplier(person.Realm, targetRealm)
+        * (ActiveRelicTemplate(world, person) is { Category: "attack" } template ? 1 + template.Bonus : 1);
     private static double SectBattleBonus(GameState world, Sect sect) => (1 + sect.Training * .09) * TraitCombatMultiplier(sect)
         * (.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004)
-        * (1 + Math.Min(.25, world.Relics.Where(r => r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power) / 600d));
+        * (1 + Math.Min(.25, world.Relics.Where(r => r.Scope == "sect" && r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power) / 600d));
     private static double DefenseFormation(GameState world, Sect? defender, Region region, double defenseBonus) =>
         (1 + region.Fort * .12) * defenseBonus
         * (defender?.Id == world.PlayerId ? world.Difficulty == "story" ? 1.2 : world.Difficulty == "hard" ? .95 : 1.05 : 1);
@@ -34,7 +35,7 @@ public static partial class GameEngine
         {
             var highestRealm = opponents.Max(p => p.Realm);
             var health = fighters.Sum(CultivatorHealth);
-            var pressure = fighters.Sum(p => CultivatorDamage(p, highestRealm)
+            var pressure = fighters.Sum(p => CultivatorDamage(world, p, highestRealm)
                 * (p.Realm > highestRealm ? Math.Min(LowerRealmTargetLimit, opponents.Count) : 1));
             return Math.Sqrt(health * pressure * bonus);
         }
@@ -78,13 +79,17 @@ public static partial class GameEngine
                     if (offset > 0 && target.Person.Realm >= source.Person.Realm) continue;
                     hits++;
                     var multiplier = RealmDamageMultiplier(source.Person.Realm, target.Person.Realm);
-                    var damage = CultivatorDamage(source.Person, target.Person.Realm) * bonus * (.92 + world.Random() * .16);
+                    var damage = CultivatorDamage(world, source.Person, target.Person.Realm) * bonus * (.92 + world.Random() * .16);
                     strikes.Add((target, damage));
                     var key = (source.Person.Id, target.Person.Id);
                     if (!exchanges.TryGetValue(key, out var exchange))
                     {
+                        var template = ActiveRelicTemplate(world, source.Person);
+                        var relic = template is null ? null : HeldRelic(world, source.Person.Id);
                         exchange = new DuelExchange { AttackerId = key.Item1, DefenderId = key.Item2, AttackerName = source.Person.Name,
-                            DefenderName = target.Person.Name, AttackerRealm = source.Person.Realm, DefenderRealm = target.Person.Realm, RealmMultiplier = multiplier };
+                            DefenderName = target.Person.Name, AttackerRealm = source.Person.Realm, DefenderRealm = target.Person.Realm, RealmMultiplier = multiplier,
+                            RelicName = template is null ? "" : string.IsNullOrWhiteSpace(relic?.Name) ? "无名法宝" : relic.Name,
+                            RelicCategory = template?.Category ?? "", RelicTier = template?.Tier ?? 0, RelicBonus = template?.Bonus ?? 0 };
                         exchanges.Add(key, exchange);
                     }
                     exchange.Hits++; exchange.Damage += damage;

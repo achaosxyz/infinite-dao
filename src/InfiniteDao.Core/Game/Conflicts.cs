@@ -25,6 +25,8 @@ public static partial class GameEngine
     {
         var defender = world.Sects.SingleOrDefault(s => s.Id == region.Owner);
         if (!paid) { if (attacker.Stones < 130 || attacker.Herbs < 20) return; Spend(attacker, 130, 20); }
+        var heldBefore = world.Relics.Where(r => r.Scope == "personal" && r.HolderId is not null).ToList();
+        var lostBefore = world.Relics.Where(r => r.Scope == "personal" && r.HolderId is null && r.Owner == "" && r.RegionId == region.Id).OrderBy(r => r.Id).ToList();
         var report = ResolveCultivatorBattle(world, attacker, region, tactic, defenseBonus, marchModifier, deployed);
         var victory = report.AttackerWon;
         var attackerLosses = report.AttackerDeaths;
@@ -45,13 +47,30 @@ public static partial class GameEngine
         else attacker.Stability = Math.Max(0, attacker.Stability - 7);
         var id = Log(world, "war", victory ? $"{attacker.Name}夺下{region.Name}" : $"{region.Name}守住了", $"门人逐一交锋{report.Rounds}轮；护山阵倍率{report.FormationBonus:F2}，低一大境界伤害仅为12%，每差一境递乘。军阵、战术、法宝、情报、战疲与粮道共同影响战斗。进攻方陨落{attackerLosses}人，守方陨落{defenderLosses}人；详细对局已收入战报。", defender is null ? [attacker.Id] : [attacker.Id, defender.Id], victory ? $"控制权 {oldOwner} → {attacker.Id}" : "控制权未改变", causal is null ? [] : [causal.Value]);
         report.EventId = id; world.BattleReports.Add(report);
+        var battlefieldOwner = victory ? attacker.Id : defender?.Id ?? "";
+        foreach (var relic in heldBefore.Where(r => r.HolderId is int holder && !world.People.Single(p => p.Id == holder).Alive).OrderBy(r => r.Id))
+            MoveRelic(world, relic, battlefieldOwner, null, region.Id, battlefieldOwner == "" ? "战场遗失" : "战场遗物", id);
+        if (victory)
+            foreach (var relic in lostBefore) MoveRelic(world, relic, attacker.Id, null, region.Id, "战场重获", id);
+        if (defender is not null)
+            foreach (var person in Members(world, defender).Where(p => !IsAway(world, p.Id)))
+                if (HeldRelic(world, person.Id) is { } relic) relic.RegionId = region.Id;
         EnsureLeader(world, attacker);
         if (defender is not null)
         {
-            EnsureLeader(world, defender);
-            if (!defender.Eliminated && Lands(world, defender).Count == 0) LoseSect(world, defender, attacker, id);
-            else if (defender.Capital == region.Id && victory) defender.Capital = Lands(world, defender).OrderByDescending(r => r.Fort).FirstOrDefault()?.Id ?? "";
+            if (victory && Lands(world, defender).Count == 0) LoseSect(world, defender, attacker, id);
+            else
+            {
+                EnsureLeader(world, defender);
+                if (!defender.Eliminated && defender.Capital == region.Id && victory)
+                {
+                    defender.Capital = Lands(world, defender).OrderByDescending(r => r.Fort).FirstOrDefault()?.Id ?? "";
+                    foreach (var relic in world.Relics.Where(r => r.Scope == "personal" && r.Owner == defender.Id && r.HolderId is null)) relic.RegionId = defender.Capital;
+                }
+            }
         }
+        foreach (var sect in new[] { attacker, defender }.Where(s => s is not null && !s.Eliminated && !s.Exiled && s.Capital != ""))
+            foreach (var relic in world.Relics.Where(r => r.Scope == "personal" && r.Owner == sect!.Id && r.HolderId is null)) relic.RegionId = sect!.Capital;
         CheckEnd(world);
     }
 
@@ -82,7 +101,12 @@ public static partial class GameEngine
             // Preserve that emergency fund so any ember choice remains playable.
             sect.Stones = Math.Max(world.Regions.All(r => r.Owner != "") ? 350 : 200, sect.Stones / 2); sect.Herbs = Math.Max(80, sect.Herbs / 2); sect.Stability = Math.Max(35, sect.Stability - 20);
             var survivors = Members(world, sect).OrderByDescending(p => p.Realm).ThenByDescending(p => p.Potential).Take(6).Select(p => p.Id).ToHashSet();
-            foreach (var p in Members(world, sect).Where(p => !survivors.Contains(p.Id))) { p.SectId = ""; p.Role = "散修"; }
+            foreach (var p in Members(world, sect).Where(p => !survivors.Contains(p.Id)))
+            {
+                var relic = HeldRelic(world, p.Id);
+                if (relic is not null) MoveRelic(world, relic, "", p.Id, relic.RegionId, "携宝离宗", cause);
+                p.SectId = ""; p.Role = "散修";
+            }
             EnsureLeader(world, sect);
             var id = Log(world, "exile", "山门虽毁，道统未绝", $"{winner.Name}占领最后山门，{survivors.Count} 名门徒携道藏与余资逃出生天。{sect.Name}仍能重建。", [sect.Id, winner.Id], "进入流亡；道藏、军阵与法宝保留", [cause]);
             world.PendingEvent = new GameEvent
@@ -99,13 +123,20 @@ public static partial class GameEngine
         }
         else
         {
-            foreach (var relic in world.Relics.Where(r => r.Owner == sect.Id)) relic.Owner = winner.Id;
+            foreach (var relic in world.Relics.Where(r => r.Owner == sect.Id && r.Scope == "sect")) relic.Owner = winner.Id;
+            foreach (var relic in world.Relics.Where(r => r.Owner == sect.Id && r.Scope == "personal" && r.HolderId is null).OrderBy(r => r.Id).ToList())
+                MoveRelic(world, relic, winner.Id, null, sect.Capital, "宗库缴获", cause);
             Dissolve(world, sect, cause);
         }
     }
 
     private static void Dissolve(GameState world, Sect sect, int? cause = null)
     {
+        foreach (var relic in world.Relics.Where(r => r.Scope == "personal" && r.Owner == sect.Id).OrderBy(r => r.Id).ToList())
+        {
+            var location = relic.HolderId is int holder && IsAway(world, holder) ? relic.RegionId : sect.Capital;
+            MoveRelic(world, relic, "", relic.HolderId, location, relic.HolderId is null ? "宗库遗失" : "携宝离宗", cause ?? 0);
+        }
         sect.Eliminated = true; sect.Exiled = false; sect.Capital = "";
         foreach (var r in Lands(world, sect)) r.Owner = "";
         foreach (var p in Members(world, sect)) { p.SectId = ""; p.Role = "散修"; p.Biography = "旧宗覆灭，余生暂作散修。"; }
@@ -123,6 +154,7 @@ public static partial class GameEngine
         Spend(sect, cost);
         if (owner is not null) { owner.Stones += cost; ChangeRelation(sect, owner, 10); }
         region.Owner = sect.Id; region.Fort = 1; sect.Capital = region.Id; sect.Exiled = false;
+        foreach (var relic in world.Relics.Where(r => r.Scope == "personal" && r.Owner == sect.Id && (r.HolderId is null || !IsAway(world, r.HolderId.Value)))) relic.RegionId = region.Id;
         foreach (var p in Members(world, sect)) p.Injury = Math.Max(0, p.Injury - 30);
         Log(world, "rebirth", "故旗再起", $"{sect.Name}在{region.Name}重立山门。旧仇未雪，道统已续；这不是重新开始，而是同一个世界里的第二次崛起。", [sect.Id], $"灵石 -{cost}；恢复领地");
     }

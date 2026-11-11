@@ -21,7 +21,7 @@ public sealed class PortraitPersistenceRegressionTests
             await store.SaveAsync(world, "one");
             var restored = await store.LoadAsync("one");
 
-            Assert.AreEqual(2, restored.SchemaVersion);
+            Assert.AreEqual(3, restored.SchemaVersion);
             CollectionAssert.AreEqual(portraits, restored.People.Select(person => $"{person.Id}:{person.Portrait}").ToArray());
         }
         finally
@@ -53,7 +53,7 @@ public sealed class PortraitPersistenceRegressionTests
         var migrated = store.Parse(json);
         var repeated = store.Parse(json);
 
-        Assert.AreEqual(2, migrated.SchemaVersion);
+        Assert.AreEqual(3, migrated.SchemaVersion);
         Assert.HasCount(6, migrated.Sects, "旧世界只迁移原六宗，不应硬塞四个新宗。");
         CollectionAssert.AreEqual(LegacySectIds, migrated.Sects.Select(sect => sect.Id).ToArray());
         Assert.AreEqual(monthBefore, migrated.Month);
@@ -88,6 +88,65 @@ public sealed class PortraitPersistenceRegressionTests
         world.People[0].Portrait = WorldFactory.PortraitCount;
 
         Assert.Throws<GameRuleException>(() => store.Parse(System.Text.Json.JsonSerializer.Serialize(world)));
+    }
+
+    [TestMethod]
+    public void VersionTwoMigrationPreservesRandomStateAndRejectsPersonalRelicFields()
+    {
+        var store = new GameSaveStore("unused");
+        var world = WorldFactory.Create("qingyun", 993, "rules", "normal", compact: true);
+        world.SchemaVersion = 2;
+        var random = world.RandomState;
+        var oldRelic = new Relic { Id = world.NewId(), Owner = world.PlayerId, Power = 12 };
+        world.Relics.Add(oldRelic);
+        var migrated = store.Parse(System.Text.Json.JsonSerializer.Serialize(world));
+        Assert.AreEqual(3, migrated.SchemaVersion);
+        Assert.AreEqual(random, migrated.RandomState);
+        Assert.AreEqual("sect", migrated.Relics.Single().Scope);
+        oldRelic.TemplateId = "attack_1_1";
+        Assert.Throws<GameRuleException>(() => store.Parse(System.Text.Json.JsonSerializer.Serialize(world)));
+    }
+
+    [TestMethod]
+    public async Task PersonalRelicAndManualRetentionSurviveSaveLoadAndCopy()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var store = new GameSaveStore(root);
+            var world = WorldFactory.Create("qingyun", 994, "rules", "normal", compact: true);
+            var holder = GameEngine.Members(world, world.Player).First();
+            var relic = new Relic { Id = world.NewId(), Scope = "personal", TemplateId = "attack_1_1", Name = "传承听雨剑", Owner = world.PlayerId, HolderId = holder.Id, RegionId = world.Player.Capital, FoundMonth = world.Month, KeepAssigned = true };
+            world.Relics.Add(relic);
+            var origin = GameEngine.Log(world, "relic_discovery", "得宝", "得宝", [world.PlayerId]);
+            world.History[^1].RelicChange = new RelicChange { RelicId = relic.Id, ToOwner = world.PlayerId, ToHolderId = holder.Id, RegionId = relic.RegionId };
+            relic.OriginEvent = relic.LastEventId = origin;
+            var battleEvent = GameEngine.Log(world, "war", "战报验证", "验证历史快照", [world.PlayerId]);
+            world.BattleReports.Add(new BattleReport { EventId = battleEvent, RegionId = world.Player.Capital, FormationBonus = 1,
+                Exchanges = [new DuelExchange { AttackerId = holder.Id, RelicName = relic.Name, RelicCategory = "attack", RelicBonus = .08, RealmMultiplier = 1 }] });
+            relic.Name = "战后新名";
+            await store.SaveAsync(world, "one");
+            var restored = await store.LoadAsync("one");
+            var copied = restored.Copy();
+            var json = await File.ReadAllTextAsync(Path.Combine(root, "one.json"));
+            var injected = json.Replace("\"templateId\":\"attack_1_1\"", "\"attackBonus\":999,\"templateId\":\"attack_1_1\"");
+            Assert.AreNotEqual(json, injected);
+            Assert.Throws<GameRuleException>(() => store.Parse(injected), "个人法宝不可注入自由数值字段");
+            Assert.Throws<GameRuleException>(() => store.Parse(json.Insert(1, "\"Relics\":[],")), "大小写不同的法宝集合不能覆盖校验");
+            foreach (var candidate in new[] { restored, copied })
+            {
+                var actual = candidate.Relics.Single(r => r.Id == relic.Id);
+                Assert.AreEqual(holder.Id, actual.HolderId);
+                Assert.IsTrue(actual.KeepAssigned);
+                Assert.AreEqual("attack_1_1", actual.TemplateId);
+                Assert.AreEqual("战后新名", actual.Name);
+                Assert.AreEqual("传承听雨剑", candidate.BattleReports.Single().Exchanges.Single().RelicName);
+                Assert.AreEqual(origin, actual.OriginEvent);
+                Assert.AreEqual(relic.Id, candidate.History.Single(e => e.Id == origin).RelicChange!.RelicId);
+                GameEngine.Validate(candidate);
+            }
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     private static GameState CreateLegacySixSectSnapshot()

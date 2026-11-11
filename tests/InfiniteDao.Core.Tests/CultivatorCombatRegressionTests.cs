@@ -6,6 +6,66 @@ namespace InfiniteDao.Core.Tests;
 public sealed class CultivatorCombatRegressionTests
 {
     [TestMethod]
+    public void GarrisonAssessmentUsesTheSamePersonalAttackBonusWithoutRandomRolls()
+    {
+        var plain = CreateBattleWorld(43, 1, 1, 1, 1); var armed = plain.Copy();
+        var person = GameEngine.Members(armed, armed.Player).Single();
+        var relic = new Relic { Id = armed.NewId(), Name = "赤霞火印", Scope = "personal", TemplateId = "attack_2_1", Owner = armed.PlayerId, HolderId = person.Id, RegionId = armed.Player.Capital, FoundMonth = armed.Month };
+        armed.Relics.Add(relic);
+        var root = GameEngine.Log(armed, "relic_discovery", "得宝", person.Name + "得宝", [armed.PlayerId]);
+        armed.History[^1].RelicChange = new RelicChange { RelicId = relic.Id, ToHolderId = person.Id, ToOwner = armed.PlayerId, RegionId = relic.RegionId };
+        relic.OriginEvent = relic.LastEventId = root;
+        var assess = typeof(GameEngine).GetMethod("CanChallengeGarrison", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        bool Can(GameState state) => (bool)assess.Invoke(null, [state, state.Player, state.Regions.Single(r => r.Id == "r11"), GameEngine.Members(state, state.Player)])!;
+        var randomBefore = armed.RandomState; var foundThreshold = false;
+        for (var fort = 0; fort <= 5 && !foundThreshold; fort++)
+        for (var injury = 0; injury <= 95 && !foundThreshold; injury++)
+        {
+            plain.Regions.Single(r => r.Id == "r11").Fort = fort; armed.Regions.Single(r => r.Id == "r11").Fort = fort;
+            GameEngine.Members(plain, plain.Player).Single().Injury = injury; person.Injury = injury;
+            foundThreshold = !Can(plain) && Can(armed);
+        }
+        Assert.IsTrue(foundThreshold, "必须存在御敌法宝改变真实阵容出征估算的边界");
+        Assert.AreEqual(randomBefore, armed.RandomState, "出征估算不能消耗规则随机数");
+    }
+
+    [TestMethod]
+    [DataRow("传承惊雷尺", "传承惊雷尺")]
+    [DataRow("", "无名法宝")]
+    [DataRow(null, "无名法宝")]
+    [DataRow("  ", "无名法宝")]
+    public void PersonalAttackRelicChangesOnlyHolderDamageAndBattleSnapshotPersists(string? instanceName, string expectedSnapshot)
+    {
+        var plain = CreateBattleWorld(42, 3, 2, 0, 1);
+        GameEngine.Members(plain, plain.Player).Last().Realm = 0;
+        var participant = PrepareBattle(plain).Participants.Single();
+        var armed = plain.Copy();
+        var relic = new Relic { Id = armed.NewId(), Name = instanceName!, Scope = "personal", TemplateId = "attack_3_1", Owner = armed.PlayerId, HolderId = participant, RegionId = armed.Player.Capital, FoundMonth = armed.Month };
+        armed.Relics.Add(relic);
+        var origin = GameEngine.Log(armed, "relic_discovery", "得宝", "得宝", [armed.PlayerId]);
+        armed.History[^1].RelicChange = new RelicChange { RelicId = relic.Id, ToOwner = armed.PlayerId, ToHolderId = participant, RegionId = relic.RegionId };
+        relic.OriginEvent = relic.LastEventId = origin;
+        GameEngine.Validate(armed);
+        static BattleReport Fight(GameState state)
+        {
+            var campaign = state.Campaigns.Single();
+            var method = typeof(GameEngine).GetMethod("ResolveCultivatorBattle", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+            return (BattleReport)method.Invoke(null, [state, state.Player, state.Regions.Single(r => r.Id == campaign.Target), "balanced", 1d, 1d, campaign.Participants])!;
+        }
+        var plainReport = Fight(plain); var armedReport = Fight(armed);
+        var baseline = plainReport.Exchanges.First(e => e.AttackerId == participant);
+        var snapshot = armedReport.Exchanges.Single(e => e.AttackerId == participant && e.DefenderId == baseline.DefenderId);
+        Assert.AreEqual("", baseline.RelicName); Assert.AreEqual("", baseline.RelicCategory);
+        Assert.AreEqual(1, baseline.Hits); Assert.AreEqual(1, snapshot.Hits);
+        Assert.AreEqual(baseline.Damage * 1.16, snapshot.Damage, 0.000001);
+        Assert.AreEqual(expectedSnapshot, snapshot.RelicName);
+        Assert.AreEqual(.16, snapshot.RelicBonus, 0.000001);
+        relic.Name = "后来更改的显示名称";
+        var restored = System.Text.Json.JsonSerializer.Deserialize<BattleReport>(System.Text.Json.JsonSerializer.Serialize(armedReport))!;
+        Assert.AreEqual(expectedSnapshot, restored.Exchanges.Single(e => e.AttackerId == participant && e.DefenderId == baseline.DefenderId).RelicName);
+    }
+
+    [TestMethod]
     [DataRow(true, 0)]
     [DataRow(true, 100)]
     [DataRow(false, 0)]

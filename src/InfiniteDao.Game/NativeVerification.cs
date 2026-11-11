@@ -26,6 +26,14 @@ public partial class GameClient
             Check(world!.Sects.Count == 10 && world.People.Select(p => p.Portrait).Distinct().Count() == WorldFactory.PortraitCount, "Ten sects must start with the complete balanced character pool.");
             Check(portraits.Length == 50 && portraits.All(p => p is not null && p.GetWidth() == 512 && p.GetHeight() == 768), "All fifty standalone character assets must be imported at production dimensions.");
             checks.Add("ten sects, fifty imported character textures, and independent persistent portrait assignments");
+            foreach (var template in PersonalRelics.Templates)
+            {
+                var path = $"res://Assets/relic-{template.Id}.png";
+                Check(ResourceLoader.Exists(path), "Missing personal relic texture: " + template.Id);
+                var texture = GD.Load<Texture2D>(path);
+                Check(texture is not null && texture.GetWidth() == 512 && texture.GetHeight() == 512, "Invalid personal relic texture: " + template.Id);
+            }
+            checks.Add("all thirty personal relic template textures load at production dimensions");
             CheckHudLayout();
             var openingWindowSize = GetWindow().Size; GetWindow().Size = new Vector2I(1100, 700); await Frames(6);
             CheckHudLayout(); Screenshot("council-small"); GetWindow().Size = openingWindowSize; await Frames(6);
@@ -83,6 +91,19 @@ public partial class GameClient
             await Press("saves"); await Press("load-one");
             Check(world!.Month == saved.Month && world.RandomState == saved.RandomState && world.Player.Stones == saved.Player.Stones, "Manual load must restore the same world."); checks.Add("manual save/load and deterministic continuation");
 
+            var largeImport = saved.Copy();
+            GameEngine.Log(largeImport, "fixture", "长档导入验证", new string('x', 8_000_100), [largeImport.PlayerId]);
+            var largePath = Path.Combine(evidence, "large-import-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                await File.WriteAllTextAsync(largePath, JsonSerializer.Serialize(largeImport));
+                Check(new FileInfo(largePath).Length > 8_000_000, "Large import fixture must exceed the former byte limit.");
+                var imported = await ReadSaveImport(session.Saves, largePath);
+                Check(imported.History[^1].Text.Length == 8_000_100, "Native import pipeline must accept valid long saves.");
+                checks.Add("native import pipeline accepts a valid save larger than 8 MB");
+            }
+            finally { File.Delete(largePath); }
+
             var disciple = GameEngine.Members(world, world.Player).First(p => p.Realm == 0);
             var guardian = GameEngine.Members(world, world.Player).First(p => p.Realm > disciple.Realm);
             await Press("nav-people"); await Press("focus-" + disciple.Id);
@@ -90,6 +111,77 @@ public partial class GameClient
             await Press("guardian-" + disciple.Id); await Press("assign-guardian-" + guardian.Id);
             Check(world!.People.Single(p => p.Id == disciple.Id).GuardianId == guardian.Id, "Guardian selection must persist.");
             Screenshot("people"); checks.Add("native disciple focus and higher-realm guardian assignment");
+            var beforeRelicView = world.Copy();
+            var relicFixture = world.Copy();
+            var relic = new Relic { Id = relicFixture.NewId(), Scope = "personal", TemplateId = "attack_1_1", Name = "听雨剑", Owner = relicFixture.PlayerId, RegionId = relicFixture.Player.Capital, FoundMonth = relicFixture.Month };
+            relicFixture.Relics.Add(relic);
+            var relicOrigin = GameEngine.Log(relicFixture, "relic_discovery", "验证法宝", "验证物品来源", [relicFixture.PlayerId]);
+            relicFixture.History[^1].RelicChange = new RelicChange { RelicId = relic.Id, ToOwner = relicFixture.PlayerId, RegionId = relic.RegionId };
+            relic.OriginEvent = relic.LastEventId = relicOrigin;
+            for (var i = 0; i < 4; i++) GameEngine.Log(relicFixture, "journey", "近事验证", disciple.Name + "的近事", [relicFixture.PlayerId]);
+            await SetVerificationWorld(relicFixture);
+            var relicWindowSize = GetWindow().Size; GetWindow().Size = new Vector2I(1100, 700); await Frames(6);
+            await Press("person-" + disciple.Id);
+            var profileScroll = FindControl<ScrollContainer>(c => c.Name == "person-profile-scroll" && c.IsVisibleInTree());
+            profileScroll.ScrollVertical = (int)profileScroll.GetVScrollBar().MaxValue; await Frames();
+            var grant = FindControl<Button>(c => c.HasMeta("action") && c.GetMeta("action").AsString() == "relic-give-" + disciple.Id && c.IsVisibleInTree());
+            Check(grant.GetGlobalRect().End.Y <= GetViewportRect().Size.Y, "Small-window relic controls must be reachable after scrolling.");
+            Screenshot("personal-relic-grant-scroll");
+            await ClickNativeButton("relic-give-" + disciple.Id); await Press("relic-choice-" + relic.Id);
+            Check(GameEngine.HeldRelic(world!, disciple.Id)?.KeepAssigned == true, "Native grant must assign and retain the selected relic.");
+            await Press("person-" + disciple.Id);
+            Check(overlay!.FindChildren("personal-relic-icon-" + relic.Id, "TextureRect", true, false).Count > 0, "Native detail must load the actual relic PNG.");
+            Screenshot("personal-relic-small");
+            await Press("person-relic-latest-" + relic.Id);
+            var flowText = string.Join('\n', overlay!.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text));
+            Check(flowText.Contains("当时流转") && flowText.Contains("从：") && flowText.Contains("至：") && flowText.Contains(disciple.Name), "Chronicle must show the real holder and historical transfer direction.");
+            Screenshot("personal-relic-chronicle"); await Press("close-dialog"); await Press("person-" + disciple.Id);
+            profileScroll = FindControl<ScrollContainer>(c => c.Name == "person-profile-scroll" && c.IsVisibleInTree());
+            profileScroll.ScrollVertical = (int)profileScroll.GetVScrollBar().MaxValue; await Frames();
+            await ClickNativeButton("relic-auto-" + disciple.Id);
+            Check(GameEngine.HeldRelic(world!, disciple.Id)?.KeepAssigned == false, "Native restore must return relic management to the steward.");
+            var deceasedFixture = world.Copy(); var deceased = deceasedFixture.People.Single(p => p.Id == disciple.Id);
+            var currentRelic = GameEngine.HeldRelic(deceasedFixture, deceased.Id)!;
+            void MoveFixture(Relic item, int? from, int? to, int cause = 0)
+            {
+                var prior = item.LastEventId;
+                var id = GameEngine.Log(deceasedFixture, "relic", "验证流转", deceased.Name + "的法宝流转", [deceasedFixture.PlayerId], causes: cause == 0 ? [prior] : [prior, cause]);
+                deceasedFixture.History[^1].RelicChange = new RelicChange { RelicId = item.Id, FromHolderId = from, ToHolderId = to, FromOwner = deceasedFixture.PlayerId, ToOwner = deceasedFixture.PlayerId, RegionId = deceasedFixture.Player.Capital };
+                item.HolderId = to; item.LastEventId = id;
+            }
+            MoveFixture(currentRelic, deceased.Id, null);
+            foreach (var templateId in new[] { "attack_1_2", "protection_1_1" })
+            {
+                var template = PersonalRelics.Find(templateId)!;
+                var old = new Relic { Id = deceasedFixture.NewId(), Scope = "personal", TemplateId = templateId, Name = template.Name, Owner = deceasedFixture.PlayerId, HolderId = deceased.Id, RegionId = deceasedFixture.Player.Capital, FoundMonth = deceasedFixture.Month };
+                deceasedFixture.Relics.Add(old);
+                var origin = GameEngine.Log(deceasedFixture, "relic_discovery", "验证前物", deceased.Name + "曾得法宝", [deceasedFixture.PlayerId]);
+                deceasedFixture.History[^1].RelicChange = new RelicChange { RelicId = old.Id, ToOwner = deceasedFixture.PlayerId, ToHolderId = deceased.Id, RegionId = old.RegionId };
+                old.OriginEvent = old.LastEventId = origin; MoveFixture(old, deceased.Id, null);
+            }
+            MoveFixture(currentRelic, null, deceased.Id);
+            var death = GameEngine.Log(deceasedFixture, "death", "验证寿尽", deceased.Name + "寿尽", [deceasedFixture.PlayerId]);
+            deceased.Alive = false; MoveFixture(currentRelic, deceased.Id, null, death);
+            MoveFixture(currentRelic, null, guardian.Id);
+            GameEngine.Validate(deceasedFixture);
+            await SetVerificationWorld(deceasedFixture); ShowPerson(world!.People.Single(p => p.Id == deceased.Id)); await Frames();
+            profileScroll = FindControl<ScrollContainer>(c => c.Name == "person-profile-scroll" && c.IsVisibleInTree());
+            profileScroll.ScrollVertical = (int)profileScroll.GetVScrollBar().MaxValue; await Frames();
+            var deceasedText = string.Join('\n', overlay!.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text));
+            Check(deceasedText.Split("曾持：").Length - 1 >= 3 && deceasedText.Contains("故去时：") && deceasedText.Contains("如今："), "Deceased profile must preserve multiple relic histories and both time points.");
+            Check(deceasedText.Contains($"曾持：{currentRelic.Name}\n故去时：归入{deceasedFixture.Player.Name}库存；如今：{guardian.Name}持有"), "Deceased profile must distinguish the actual death transfer from the later holder.");
+            Check(deceasedText.Contains("故去时：未持此物"), "Previously held relics must not be attributed to the death transfer.");
+            var close = FindControl<Button>(c => c.HasMeta("action") && c.GetMeta("action").AsString() == "close-dialog" && c.IsVisibleInTree());
+            Check(close.GetGlobalRect().End.Y <= GetViewportRect().Size.Y, "Small-window close must remain visible for a long deceased profile.");
+            Screenshot("deceased-relic-small"); await ClickNativeButton("close-dialog");
+            var historicalBattle = new BattleReport { Exchanges = [new DuelExchange { AttackerName = deceased.Name, DefenderName = guardian.Name, RelicName = "战时旧名", RelicCategory = "attack", RelicTier = 0, RelicBonus = .08 }] };
+            ShowBattleReport(historicalBattle); await Frames();
+            var battleText = string.Join('\n', overlay!.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text));
+            Check(battleText.Contains("当场御使战时旧名") && !battleText.Contains("当场御使" + currentRelic.Name), "Battle view must display its historical snapshot, not the current relic name.");
+            await Press("close-dialog");
+            GetWindow().Size = relicWindowSize; await Frames(6);
+            await SetVerificationWorld(beforeRelicView);
+            checks.Add("constructed relic fixture: native grant, real template PNG, and restore stewardship");
             var beforeMemoryView = world.Copy();
             var memoryFixture = world.Copy();
             var rival = memoryFixture.Sects.First(s => s.Id != memoryFixture.PlayerId);
@@ -208,7 +300,9 @@ public partial class GameClient
     private async Task Press(string key)
     {
         await Frames();
-        var button = FindControl<Godot.Button>(n => n.HasMeta("action") && n.GetMeta("action").AsString() == key && n.IsVisibleInTree());
+        Godot.Button button;
+        try { button = FindControl<Godot.Button>(n => n.HasMeta("action") && n.GetMeta("action").AsString() == key && n.IsVisibleInTree()); }
+        catch (InvalidOperationException error) { throw new InvalidOperationException("Native action not found: " + key, error); }
         Check(!button.Disabled, "Native button is disabled: " + key); button.EmitSignal(BaseButton.SignalName.Pressed);
         await WaitForNativeAction(key);
         await Frames();
@@ -220,6 +314,9 @@ public partial class GameClient
         var button = FindControl<Button>(n => n.HasMeta("action") && n.GetMeta("action").AsString() == key && n.IsVisibleInTree());
         Check(!button.Disabled, "Native button is disabled: " + key);
         var point = button.GetGlobalTransform() * (button.Size / 2);
+        var logicalSize = GetViewportRect().Size; var windowSize = GetWindow().Size;
+        var scale = Math.Min(windowSize.X / logicalSize.X, windowSize.Y / logicalSize.Y);
+        point *= scale;
         Input.ParseInputEvent(new InputEventMouseMotion { Position = point, GlobalPosition = point }); await Frames();
         Input.ParseInputEvent(new InputEventMouseButton { Position = point, GlobalPosition = point, ButtonIndex = MouseButton.Left, ButtonMask = MouseButtonMask.Left, Pressed = true }); Input.FlushBufferedEvents(); await Frames();
         Input.ParseInputEvent(new InputEventMouseButton { Position = point, GlobalPosition = point, ButtonIndex = MouseButton.Left, Pressed = false }); await Frames();
@@ -231,7 +328,7 @@ public partial class GameClient
         var deadline = Time.GetTicksMsec() + 600_000;
         while (busy && Time.GetTicksMsec() < deadline) await Frames(1);
         Check(!busy, "Native action timed out: " + key);
-        Check(overlay is null || key is "saves" or "settings" or "help" or "region-details" || key.StartsWith("chronicle-", StringComparison.Ordinal) || key.StartsWith("person-", StringComparison.Ordinal) || key.StartsWith("map-leader-", StringComparison.Ordinal) || key.StartsWith("guardian-", StringComparison.Ordinal) || key.StartsWith("agent-memory-", StringComparison.Ordinal), "Unexpected dialog after native action: " + key + "; " + notice);
+        Check(overlay is null || key is "saves" or "settings" or "help" or "region-details" || key.StartsWith("chronicle-", StringComparison.Ordinal) || key.StartsWith("person-", StringComparison.Ordinal) || key.StartsWith("relic-give-", StringComparison.Ordinal) || key.StartsWith("map-leader-", StringComparison.Ordinal) || key.StartsWith("guardian-", StringComparison.Ordinal) || key.StartsWith("agent-memory-", StringComparison.Ordinal), "Unexpected dialog after native action: " + key + "; " + notice);
     }
 
     private void CheckHudLayout()

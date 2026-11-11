@@ -44,7 +44,8 @@ public sealed partial class SectAgentLoop
         var section = input.GetProperty("section").GetString();
         object data = section switch
         {
-            "self" => new { sect, members = GameEngine.Members(world, sect).Select(p => new { p.Id, p.Name, p.Role, realm = WorldFactory.RealmNames[p.Realm], p.AgeMonths, p.Potential, p.Injury, p.Focused, p.GuardianId, away = GameEngine.IsAway(world, p.Id) }),
+            "self" => new { sect, members = GameEngine.Members(world, sect).Select(p => new { p.Id, p.Name, p.Role, realm = WorldFactory.RealmNames[p.Realm], p.AgeMonths, p.Potential, p.Injury, p.Focused, p.GuardianId, away = GameEngine.IsAway(world, p.Id), relic = GameEngine.HeldRelic(world, p.Id) is { } relic ? new { relic.Name, minimumRealm = WorldFactory.RealmNames[PersonalRelics.Find(relic.TemplateId)!.Tier], effect = PersonalRelics.Find(relic.TemplateId)!.EffectText } : null }),
+                relicRules = "法器、灵器、法宝分别从炼气、筑基、金丹起用；御敌最高增加本人16%伤害，护身最高相对降低本人25%历练风险，库存不生效。",
                 income = GameEngine.Income(world, sect), upkeep = GameEngine.Upkeep(world, sect), herbIncome = GameEngine.HerbIncome(world, sect), reservedStones = GameEngine.ReservedStones(world, sect), reservedHerbs = GameEngine.ReservedHerbs(world, sect) },
             "neighbors" => world.Regions.Where(r => r.Owner != sect.Id && GameEngine.Border(world, sect, r)).OrderBy(r => r.Id).Select(r => new { r.Id, r.Name, r.Owner, r.Fort, r.Terrain, r.Neighbors, defenseEstimate = GameEngine.DefensePower(world, r), minimumBattleMonths = GameEngine.MinimumBattleMonths(world, r),
                 realmComposition = world.People.Where(p => p.Alive && p.SectId == r.Owner).GroupBy(p => p.Realm).Select(g => new { realm = WorldFactory.RealmNames[g.Key], count = g.Count(), available = g.Count(p => !GameEngine.IsAway(world, p.Id)) }) }),

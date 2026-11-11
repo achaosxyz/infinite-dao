@@ -7,8 +7,9 @@ public static partial class GameEngine
     public static int Power(GameState world, Sect sect)
     {
         double[] weights = [5, 16, 48, 135, 350, 850];
-        var basePower = Members(world, sect).Sum(p => weights[p.Realm] * (1 - p.Injury / 140d) * (0.8 + p.Potential / 200d));
-        var relicPower = world.Relics.Where(r => r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power);
+        var basePower = Members(world, sect).Sum(p => weights[p.Realm] * (1 - p.Injury / 140d) * (0.8 + p.Potential / 200d)
+            * (ActiveRelicTemplate(world, p) is { Category: "attack" } t ? 1 + t.Bonus : 1));
+        var relicPower = world.Relics.Where(r => r.Scope == "sect" && r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power);
         return (int)((basePower + relicPower) * (1 + sect.Training * 0.09) * TraitCombatMultiplier(sect) * (0.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004));
     }
     private static double TraitCombatMultiplier(Sect sect) => sect.Trait switch { "sword" => 1.12, "fire" => 1.08, "thunder" => 1.10, _ => 1 };
@@ -59,6 +60,10 @@ public static partial class GameEngine
         if (command.Type is "focus" or "guardian")
         {
             AssignDisciple(world, command); Validate(world); return;
+        }
+        if (command.Type is "relic_give" or "relic_auto")
+        {
+            AssignPersonalRelic(world, command); Validate(world); return;
         }
         if (sect.Exiled && command.Type != "settle") throw new GameRuleException("宗门正在流亡，请先选择落脚之地重建山门。");
         if (world.CommandsLeft <= 0) throw new GameRuleException("本月两道宗令已下达，请推进时间后再作安排。");
@@ -140,6 +145,7 @@ public static partial class GameEngine
             {
                 var campaign = world.Campaigns.SingleOrDefault(c => c.Id.ToString() == command.Target && c.Attacker == sect.Id) ?? throw new GameRuleException("没有可撤回的本宗远征军。");
                 world.Campaigns.Remove(campaign); sect.WarExhaustion = Math.Min(100, sect.WarExhaustion + 6);
+                ReturnCampaignRelics(world, campaign, sect);
                 Log(world, "war", "主动收兵", $"{sect.Name}撤回远征军，已支付的补给与动员费用不返还。", [sect.Id], "战疲 +6", [campaign.OriginEvent]); break;
             }
             case "attack":
@@ -157,6 +163,7 @@ public static partial class GameEngine
                 Settle(world, sect, command.Target); break;
             default: throw new GameRuleException("未知宗令。");
         }
+        if (!sect.Exiled && !sect.Eliminated) AssignInventory(world, sect);
         world.CommandsLeft--; CheckEnd(world); Validate(world);
     }
 
@@ -187,7 +194,7 @@ public static partial class GameEngine
 
     public static void Validate(GameState world)
     {
-        if (world.SchemaVersion is not (1 or 2) || world.SchemaVersion == 1 && world.Sects.Count != 6 || world.SchemaVersion == 2 && world.Sects.Count is not (6 or 10) || world.MapColumns is < 4 or > 64 || world.MapRows is < 4 or > 64 || world.Regions.Count != world.MapColumns * world.MapRows || world.Month < 0 || world.Revision < 0) throw new GameRuleException("存档结构或版本无效。");
+        if (world.SchemaVersion is not (1 or 2 or 3) || world.SchemaVersion == 1 && world.Sects.Count != 6 || world.SchemaVersion >= 2 && world.Sects.Count is not (6 or 10) || world.MapColumns is < 4 or > 64 || world.MapRows is < 4 or > 64 || world.Regions.Count != world.MapColumns * world.MapRows || world.Month < 0 || world.Revision < 0) throw new GameRuleException("存档结构或版本无效。");
         if (world.People.Count > 100000 || world.History.Count > 1000000 || world.Decisions.Count > 2000000) throw new GameRuleException("存档数据量超出安全限制。");
         if (world.Sects.Select(s => s.Id).Distinct().Count() != world.Sects.Count || world.Regions.Select(r => r.Id).Distinct().Count() != world.Regions.Count || world.Regions.Select(r => r.Index).Distinct().Count() != world.Regions.Count || world.People.Select(p => p.Id).Distinct().Count() != world.People.Count) throw new GameRuleException("实体身份重复。");
         if (!world.Sects.Any(s => s.Id == world.PlayerId)) throw new GameRuleException("玩家宗门不存在。");
@@ -204,8 +211,12 @@ public static partial class GameEngine
         var seen = new HashSet<int>();
         foreach (var e in world.History)
         {
-            if (e.Causes.Any(c => !seen.Contains(c)) || !seen.Add(e.Id)) throw new GameRuleException("历史因果引用无效。");
+            if (e.Id <= 0 || e.Id >= world.NextId || e.Causes.Any(c => !seen.Contains(c)) || !seen.Add(e.Id)) throw new GameRuleException("历史因果引用无效。");
         }
+        if (world.SchemaVersion < 3 && (world.History.Any(e => e.RelicChange != null) || world.Relics.Any(r => r.Scope != "sect" || r.TemplateId != "" || r.HolderId != null || r.RegionId != "" || r.KeepAssigned || r.LastEventId != 0)
+            || world.BattleReports.SelectMany(r => r.Exchanges).Any(e => e.RelicName != "" || e.RelicCategory != "" || e.RelicTier != 0 || e.RelicBonus != 0)))
+            throw new GameRuleException("旧版存档包含不兼容的个人法宝数据。");
+        if (world.SchemaVersion == 3) PersonalRelics.Validate(world, seen);
         if (world.Campaigns.Count > world.Sects.Count || world.Campaigns.Select(c => c.Attacker).Distinct().Count() != world.Campaigns.Count || world.Campaigns.Select(c => c.Target).Distinct().Count() != world.Campaigns.Count) throw new GameRuleException("远征军或战线重复。");
         foreach (var c in world.Campaigns)
             if (!world.Sects.Any(s => s.Id == c.Attacker) || !world.Regions.Any(r => r.Id == c.Target) || c.Defender != "" && !world.Sects.Any(s => s.Id == c.Defender) || c.MonthsRemaining < 1 || c.MonthsRemaining > c.Duration || c.Duration < 2 || c.MonthlyStones < 0 || c.MonthlyHerbs < 0 || !double.IsFinite(c.Supply) || c.Supply is < 0 or > 1 || !double.IsFinite(c.DefenseBonus) || c.DefenseBonus is < 1 or > 1.45 || !seen.Contains(c.OriginEvent)) throw new GameRuleException("战役状态无效。");
@@ -220,7 +231,8 @@ public static partial class GameEngine
         if (deployed.Distinct().Count() != deployed.Count || deployed.Any(id => !world.People.Any(p => p.Id == id))) throw new GameRuleException("门人重复部署或不存在。");
         foreach (var report in world.BattleReports)
             if (!seen.Contains(report.EventId) || !world.Regions.Any(r => r.Id == report.RegionId) || report.Rounds is < 0 or > 48
-                || !double.IsFinite(report.FormationBonus) || report.Exchanges.Any(e => !double.IsFinite(e.Damage) || e.Damage < 0 || !double.IsFinite(e.RealmMultiplier) || e.RealmMultiplier <= 0 || e.AttackerRealm is < 0 or > 5 || e.DefenderRealm is < 0 or > 5)) throw new GameRuleException("对局战报无效。");
+                || !double.IsFinite(report.FormationBonus) || report.Exchanges.Any(e => !double.IsFinite(e.Damage) || e.Damage < 0 || !double.IsFinite(e.RealmMultiplier) || e.RealmMultiplier <= 0 || e.AttackerRealm is < 0 or > 5 || e.DefenderRealm is < 0 or > 5
+                    || e.RelicName is null || e.RelicCategory is not ("" or "attack" or "protection") || e.RelicTier is < 0 or > 2 || !double.IsFinite(e.RelicBonus) || e.RelicBonus is < 0 or > .25 || (e.RelicName == "") != (e.RelicCategory == ""))) throw new GameRuleException("对局战报无效。");
         if (world.AgentStatus is null or { Length: > 600 }) throw new GameRuleException("宗门Agent状态提示无效。");
         if (world.AgentMemories.Select(m => m.SectId).Distinct().Count() != world.AgentMemories.Count) throw new GameRuleException("宗门Agent会话重复。");
         foreach (var memory in world.AgentMemories)

@@ -4,7 +4,7 @@ namespace InfiniteDao.Core.Game;
 
 public sealed class GameState
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public int Seed { get; set; }
     public uint RandomState { get; set; }
     public long Revision { get; set; }
@@ -131,6 +131,17 @@ public sealed class Chronicle
     public List<string> Sects { get; set; } = [];
     public List<int> Causes { get; set; } = [];
     public string Delta { get; set; } = "";
+    public RelicChange? RelicChange { get; set; }
+}
+
+public sealed class RelicChange
+{
+    public int RelicId { get; set; }
+    public int? FromHolderId { get; set; }
+    public int? ToHolderId { get; set; }
+    public string FromOwner { get; set; } = "";
+    public string ToOwner { get; set; } = "";
+    public string RegionId { get; set; } = "";
 }
 
 public sealed class Relic
@@ -142,6 +153,12 @@ public sealed class Relic
     public int Power { get; set; }
     public int FoundMonth { get; set; }
     public int OriginEvent { get; set; }
+    public string Scope { get; set; } = "sect";
+    public string TemplateId { get; set; } = "";
+    public int? HolderId { get; set; }
+    public string RegionId { get; set; } = "";
+    public bool KeepAssigned { get; set; }
+    public int LastEventId { get; set; }
 }
 
 public sealed class GameEvent
@@ -235,4 +252,8 @@ public sealed class DuelExchange
     public int Hits { get; set; }
     public double Damage { get; set; }
     public double RealmMultiplier { get; set; }
+    public string RelicName { get; set; } = "";
+    public string RelicCategory { get; set; } = "";
+    public int RelicTier { get; set; }
+    public double RelicBonus { get; set; }
 }

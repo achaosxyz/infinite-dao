@@ -37,6 +37,7 @@ public partial class GameClient
                 info.AddChild(Text($"{sect?.Name ?? "散修"} · {role} · {WorldFactory.RealmNames[person.Realm]}", 13, sect is null ? Muted : new Color(sect.Color).Darkened(.4f)));
                 info.AddChild(Text($"{person.AgeMonths / 12} 岁 / 寿元 {WorldFactory.Lifespans[person.Realm]}   ·   资质 {person.Potential}   ·   忠诚 {person.Loyalty}", 12, Muted));
                 info.AddChild(Text($"{CultivationText(person)}   ·   伤势 {person.Injury}   ·   {person.Temperament}", 12, person.Injury > 40 ? Cinnabar : Muted, true)); profile.AddChild(info); card.AddChild(profile);
+                if (person.Alive) card.AddChild(Text("随身法宝：" + (GameEngine.HeldRelic(state, person.Id)?.Name ?? "暂无，执事自动安排"), 12, Muted));
                 var actions = Row(); actions.AddChild(Button("生平与修行", "person-" + person.Id, () => ShowPerson(person)));
                 if (person.Alive && person.SectId == state.PlayerId)
                 {
@@ -63,9 +64,64 @@ public partial class GameClient
         facts.AddChild(Heading(person.Name, 32)); facts.AddChild(Text($"{WorldFactory.RealmNames[person.Realm]} · {person.Role} · {(person.Alive ? "在世" : "故去")}", 16, Gold));
         facts.AddChild(Text($"所修功法：{person.Technique}\n资质 {person.Potential} · 忠诚 {person.Loyalty}\n{CultivationText(person)}\n伤势 {person.Injury} · 战功 {person.Kills} · 心性 {person.Temperament}", 14, Paper, true)); row.AddChild(facts); content.AddChild(row);
         content.AddChild(Text(person.Biography, 16, Paper, true));
+        var relic = GameEngine.HeldRelic(world, person.Id);
+        if (person.Alive && relic is not null)
+        {
+            var template = PersonalRelics.Find(relic.TemplateId)!;
+            var relicRow = Row(12); var path = $"res://Assets/relic-{relic.TemplateId}.png";
+            if (ResourceLoader.Exists(path)) relicRow.AddChild(new TextureRect { Name = "personal-relic-icon-" + relic.Id, Texture = GD.Load<Texture2D>(path), CustomMinimumSize = new Vector2(84, 84), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered });
+            relicRow.AddChild(Text($"随身：{relic.Name} · {template.EffectText}\n{(relic.KeepAssigned ? "已保留此物" : "执事自动安排")} · 来历可追溯", 14, Paper, true));
+            content.AddChild(relicRow);
+            var relicHistory = Row(8);
+            relicHistory.AddChild(Button("追溯法宝来历", "person-relic-origin", () => ShowChronicle(relic.OriginEvent)));
+            relicHistory.AddChild(Button("查看最近流转", "person-relic-latest-" + relic.Id, () => ShowChronicle(relic.LastEventId)));
+            content.AddChild(relicHistory);
+        }
+        else if (person.Alive) content.AddChild(Text("暂无随身法宝，执事自动安排。", 14, Muted, true));
+        else
+        {
+            foreach (var item in world.History.Where(e => e.RelicChange?.ToHolderId == person.Id).Select(e => e.RelicChange!.RelicId).Distinct())
+            {
+                var old = world.Relics.SingleOrDefault(r => r.Id == item);
+                if (old is null) continue;
+                var deathTransfer = world.History.LastOrDefault(e => e.RelicChange is { } change && change.RelicId == item && change.FromHolderId == person.Id && change.ToHolderId != person.Id
+                    && e.Causes.Any(id => world.History.Any(cause => cause.Id == id && cause.Kind is "death" or "war")));
+                var atDeath = deathTransfer?.RelicChange is { } deathChange
+                    ? deathChange.ToHolderId is int recipient ? "交予" + world.People.Single(p => p.Id == recipient).Name
+                        : deathChange.ToOwner == "" ? "遗失于" + world.Regions.Single(r => r.Id == deathChange.RegionId).Name : "归入" + world.Sects.Single(s => s.Id == deathChange.ToOwner).Name + "库存"
+                    : "未持此物";
+                var now = old.HolderId is int holder ? world.People.Single(p => p.Id == holder).Name + "持有" : old.Owner == "" ? "遗失在" + world.Regions.Single(r => r.Id == old.RegionId).Name : "存于" + world.Sects.Single(s => s.Id == old.Owner).Name;
+                content.AddChild(Text($"曾持：{old.Name}\n故去时：{atDeath}；如今：{now}", 13, Muted, true));
+                if (deathTransfer is not null) content.AddChild(Button("追溯当时去向", "person-relic-death-" + old.Id, () => ShowChronicle(deathTransfer.Id)));
+                content.AddChild(Button("查看最近流转", "person-relic-latest-" + old.Id, () => ShowChronicle(old.LastEventId)));
+            }
+        }
+        if (person.Alive && person.SectId == world.PlayerId && relic?.KeepAssigned == true)
+            content.AddChild(Button(GameEngine.IsAway(world, person.Id) ? "交给执事（归山后安排）" : "交给执事", "relic-auto-" + person.Id,
+                () => { CloseOverlay(); Command("relic_auto", person.Id.ToString()); }, busy || world.PendingEvent is not null || world.Status != "playing"));
+        if (person.Alive && person.SectId == world.PlayerId && person.Focused)
+            content.AddChild(Button("赐予法宝", "relic-give-" + person.Id, () => ShowRelicChoices(person), busy || world.PendingEvent is not null || world.Status != "playing" || GameEngine.IsAway(world, person.Id) || world.Player.Exiled));
         var events = world!.History.Where(e => e.Text.Contains(person.Name, StringComparison.Ordinal)).TakeLast(4);
         foreach (var entry in events) content.AddChild(Button($"{Date(entry.Month)} · {entry.Title}", "person-event-" + entry.Id, () => ShowChronicle(entry.Id)));
-        ShowOverlay("人物小传", content);
+        var profileScroll = Scroll(content);
+        profileScroll.Name = "person-profile-scroll";
+        profileScroll.CustomMinimumSize = new Vector2(700, Math.Max(250, GetViewportRect().Size.Y - 180));
+        ShowOverlay("人物小传", profileScroll);
+    }
+
+    private void ShowRelicChoices(Cultivator person)
+    {
+        var state = world!; var content = Stack(10);
+        content.AddChild(Text("选择一件归山的法宝。目标旧物回库，来源人物的空位由执事安排；不要求双方交换。", 14, Muted, true));
+        var list = Stack(6);
+        foreach (var relic in state.Relics.Where(r => r.Scope == "personal" && r.Owner == state.PlayerId && PersonalRelics.Find(r.TemplateId) is { } t && t.Tier <= person.Realm && (r.HolderId is null || !GameEngine.IsAway(state, r.HolderId.Value))).OrderBy(r => r.Id))
+        {
+            var source = relic.HolderId is int holder ? state.People.Single(p => p.Id == holder).Name : "库存";
+            list.AddChild(Button($"{relic.Name} · {PersonalRelics.Find(relic.TemplateId)!.EffectText} · {source}", "relic-choice-" + relic.Id,
+                () => { CloseOverlay(); Command("relic_give", person.Id.ToString(), relic.Id.ToString()); }));
+        }
+        if (list.GetChildCount() == 0) list.AddChild(Text("暂无可御使且已归山的法宝。", 14, Muted));
+        var scroll = Scroll(list); scroll.CustomMinimumSize = new Vector2(650, 300); content.AddChild(scroll); ShowOverlay("赐予随身法宝", content);
     }
 
     private void ShowGuardians(Cultivator disciple)
@@ -153,8 +209,9 @@ public partial class GameClient
         var list = Stack(); list.AddChild(Heading("天下遗宝", 24));
         foreach (var relic in state.Relics.OrderByDescending(r => r.FoundMonth))
         {
-            var owner = state.Sects.Single(s => s.Id == relic.Owner); var content = Stack(8);
-            content.AddChild(Heading(relic.Name, 23, Gold)); content.AddChild(Text($"{owner.Name}持有 · 战力 +{relic.Power} · {Date(relic.FoundMonth)}入世", 13, new Color(owner.Color)));
+            var owner = state.Sects.SingleOrDefault(s => s.Id == relic.Owner); var content = Stack(8);
+            var location = relic.HolderId is int holder ? state.People.Single(p => p.Id == holder).Name + "随身" : owner is null ? "遗失于" + state.Regions.Single(r => r.Id == relic.RegionId).Name : owner.Name + "库存";
+            content.AddChild(Heading(relic.Name, 23, Gold)); content.AddChild(Text($"{location} · {(relic.Scope == "sect" ? "镇宗战力 +" + relic.Power : PersonalRelics.Find(relic.TemplateId)!.EffectText)} · {Date(relic.FoundMonth)}入世", 13, owner is null ? Muted : new Color(owner.Color)));
             content.AddChild(Text(relic.Effect, 15, Paper, true)); content.AddChild(Button("追溯来源", "relic-origin-" + relic.Id, () => ShowChronicle(relic.OriginEvent))); list.AddChild(Card(content));
         }
         if (state.Relics.Count == 0) list.AddChild(Text("尚无遗宝入世。门人会自动下山探访机缘，关键秘境也会带来掌门抉择。", color: Muted, wrap: true));
@@ -168,7 +225,7 @@ public partial class GameClient
         foreach (var entry in new[] { ("all", "天下纪事"), ("player", "本宗兴衰"), ("battle", "战役与亡者"), ("cultivation", "修行与机缘") })
             filters.AddChild(Button(entry.Item2, "history-" + entry.Item1, () => { historyFilter = entry.Item1; Render(); }, primary: historyFilter == entry.Item1));
         view.AddChild(filters); var list = Stack(12);
-        var entries = state.History.Where(e => historyFilter switch { "player" => e.Sects.Contains(state.PlayerId), "battle" => e.Kind is "war" or "campaign" or "death" or "exile" or "rebirth", "cultivation" => e.Kind is "cultivation" or "relic" or "explore" or "journey", _ => true }).Reverse().Take(historyVisible);
+        var entries = state.History.Where(e => historyFilter switch { "player" => e.Sects.Contains(state.PlayerId), "battle" => e.Kind is "war" or "campaign" or "death" or "exile" or "rebirth", "cultivation" => e.Kind is "cultivation" or "relic" or "relic_discovery" or "explore" or "journey", _ => true }).Reverse().Take(historyVisible);
         foreach (var entry in entries)
         {
             var content = Stack(8); var heading = Row(); var title = Heading(entry.Title, 23); title.SizeFlagsHorizontal = SizeFlags.ExpandFill; heading.AddChild(title); heading.AddChild(Text(Date(entry.Month), 12, Gold)); content.AddChild(heading);
@@ -186,6 +243,15 @@ public partial class GameClient
         var entry = world!.History.Single(e => e.Id == id); var content = Stack(16);
         content.AddChild(Text(Date(entry.Month), 13, Gold)); content.AddChild(Heading(entry.Title, 30)); content.AddChild(Text(entry.Text, 16, Paper, true));
         if (entry.Delta != "") content.AddChild(Text(entry.Delta, 14, Jade, true));
+        if (entry.RelicChange is { } change)
+        {
+            var relic = world.Relics.Single(r => r.Id == change.RelicId);
+            string Place(int? holder, string owner) => holder is int personId
+                ? world.People.Single(p => p.Id == personId).Name + (owner == "" ? "（散修）" : "（" + world.Sects.Single(s => s.Id == owner).Name + "）")
+                : owner == "" ? "无持有人、无宗门归属" : world.Sects.Single(s => s.Id == owner).Name + "库存";
+            content.AddChild(Text($"{relic.Name} · 当时流转\n从：{Place(change.FromHolderId, change.FromOwner)}\n至：{Place(change.ToHolderId, change.ToOwner)}\n地域：{world.Regions.Single(r => r.Id == change.RegionId).Name}", 14, Paper, true));
+            if (entry.Id != relic.LastEventId) content.AddChild(Button("查看此物最近流转", "chronicle-relic-latest-" + relic.Id, () => ShowChronicle(relic.LastEventId)));
+        }
         foreach (var causeId in entry.Causes)
         {
             var cause = world.History.Single(e => e.Id == causeId); content.AddChild(Button($"前因：{Date(cause.Month)} · {cause.Title}", "cause-" + causeId, () => ShowChronicle(causeId)));

@@ -81,6 +81,7 @@ public static partial class GameEngine
 
     private static void AdvanceExpeditions(GameState world)
     {
+        var returns = new List<(int JourneyId, Sect Sect, Cultivator Person, Region Region, int EventId)>();
         foreach (var journey in world.Expeditions.OrderBy(e => e.Id).ToList())
         {
             var person = world.People.Single(p => p.Id == journey.DiscipleId);
@@ -92,12 +93,18 @@ public static partial class GameEngine
             var guardian = world.People.SingleOrDefault(p => p.Id == journey.GuardianId && p.Alive && p.SectId == sect.Id);
             var danger = Math.Clamp((region.Spirit - person.Realm - 1) * .035 + (region.Owner != "" && region.Owner != sect.Id ? .08 : .02), .02, .3);
             if (guardian is not null) danger *= Math.Pow(.25, guardian.Realm - person.Realm);
+            if (ActiveRelicTemplate(world, person) is { Category: "protection" } protection) danger *= 1 - protection.Bonus;
             var roll = world.Random();
             if (roll < danger)
             {
                 person.Alive = false; person.Biography += $" 青岚历{world.Month / 12 + 1}年于{region.Name}历练遇险陨落。";
-                Log(world, "death", $"{person.Name}历练陨落", $"{person.Name}未能从{region.Name}归来。{(guardian is null ? "此行没有护道人同行。" : guardian.Name + "奋力护持仍未救回，身负重伤。")}", [sect.Id], "门徒 -1", [journey.OriginEvent]);
+                var death = Log(world, "death", $"{person.Name}历练陨落", $"{person.Name}未能从{region.Name}归来。{(guardian is null ? "此行没有护道人同行。" : guardian.Name + "奋力护持仍未救回，身负重伤。")}", [sect.Id], "门徒 -1", [journey.OriginEvent]);
                 if (guardian is not null) { guardian.Injury = Math.Min(95, guardian.Injury + 45); if (world.Random() < .08) { guardian.Alive = false; guardian.Biography += " 护道时殉身。"; Log(world, "death", "护道者殉身", $"{guardian.Name}于{region.Name}护道陨落。", [sect.Id], "门徒 -1", [journey.OriginEvent]); } }
+                var personRelic = HeldRelic(world, person.Id);
+                if (personRelic is not null) MoveRelic(world, personRelic, guardian?.Alive == true ? sect.Id : "", null, region.Id, guardian?.Alive == true ? "护道带回遗物" : "历练遗失", death);
+                if (personRelic is not null && guardian?.Alive == true) personRelic.RegionId = sect.Capital;
+                if (guardian is { Alive: false } && HeldRelic(world, guardian.Id) is { } guardianRelic)
+                    MoveRelic(world, guardianRelic, "", null, region.Id, "护道遗物失落", world.History.Last(e => e.Kind == "death").Id);
             }
             else
             {
@@ -105,11 +112,19 @@ public static partial class GameEngine
                 person.Injury = Math.Min(95, person.Injury + (injured ? world.Roll(20, 50) : 0));
                 person.Progress = Math.Min(120, person.Progress + world.Roll(8, 20));
                 var stones = world.Roll(30, 100) * (person.Realm + 1); sect.Stones += stones; sect.Herbs += world.Roll(5, 20);
-                Log(world, "journey", $"{person.Name}历练归山", $"自{region.Name}归来，{(injured ? "带伤而归，需静养" : "心境精进")}。{(guardian is null ? "独自历练" : guardian.Name + "随行护道") }。", [sect.Id], $"灵石 +{stones}；修为增长", [journey.OriginEvent]);
+                var returned = Log(world, "journey", $"{person.Name}历练归山", $"自{region.Name}归来，{(injured ? "带伤而归，需静养" : "心境精进")}。{(guardian is null ? "独自历练" : guardian.Name + "随行护道") }。", [sect.Id], $"灵石 +{stones}；修为增长", [journey.OriginEvent]);
+                returns.Add((journey.Id, sect, person, region, returned));
             }
             world.Expeditions.Remove(journey); person.NextJourneyMonth = world.Month + world.Roll(24, 60);
+            if (person.Alive && HeldRelic(world, person.Id) is { } returnedRelic) returnedRelic.RegionId = sect.Capital;
+            if (guardian is { Alive: true } && HeldRelic(world, guardian.Id) is { } guardianReturnedRelic) guardianReturnedRelic.RegionId = sect.Capital;
             EnsureLeader(world, sect);
         }
+        foreach (var returned in returns.OrderBy(r => r.JourneyId))
+            if (returned.Person.Alive && !returned.Sect.Eliminated && !returned.Sect.Exiled)
+                JourneyRelicReturn(world, returned.Sect, returned.Person, returned.Region, returned.EventId);
+        foreach (var sect in world.Sects.Where(s => !s.Eliminated && !s.Exiled).OrderBy(s => s.Id)) AssignInventory(world, sect);
+        if (!world.AutoStewardship) return;
         foreach (var sect in world.Sects.Where(s => !s.Eliminated && !s.Exiled).OrderBy(s => s.Id))
         {
             var members = Members(world, sect);
@@ -124,6 +139,8 @@ public static partial class GameEngine
                 if (destinations.Count == 0) continue;
                 var region = destinations[world.Roll(0, destinations.Count - 1)];
                 var cause = Log(world, "journey", $"{p.Name}下山历练", $"前往{region.Name}，预计一至三年归来。{(guardian is null ? "无护道人随行，遇险可能陨落。" : guardian.Name + "同行护道。")}", [sect.Id]);
+                if (HeldRelic(world, p.Id) is { } pRelic) pRelic.RegionId = region.Id;
+                if (guardian is not null && HeldRelic(world, guardian.Id) is { } gRelic) gRelic.RegionId = region.Id;
                 world.Expeditions.Add(new Expedition { Id = world.NewId(), DiscipleId = p.Id, GuardianId = guardian?.Id, SectId = sect.Id, RegionId = region.Id, MonthsRemaining = world.Roll(12, 36), OriginEvent = cause });
             }
         }

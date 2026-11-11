@@ -38,6 +38,8 @@ public static partial class GameEngine
         Spend(attacker, 130, 20);
         var cost = CampaignCosts(world, attacker, target);
         var origin = Log(world, "campaign", $"{attacker.Name}远征{target.Name}", $"主力集结、行军与围攻，预计{cost.Duration}个月。每月消耗灵石{cost.Stones}、灵材{cost.Herbs}。期间不能开启第二场远征，战果尚未结算。", target.Owner == "" ? [attacker.Id] : [attacker.Id, target.Owner], "备军灵石 -130；灵材 -20");
+        foreach (var id in participants)
+            if (HeldRelic(world, id) is { } relic) relic.RegionId = target.Id;
         world.Campaigns.Add(new Campaign { Id = world.NewId(), Attacker = attacker.Id, Defender = target.Owner, Target = target.Id, Tactic = tactic, StartedMonth = world.Month, Duration = cost.Duration, MonthsRemaining = cost.Duration, MonthlyStones = cost.Stones, MonthlyHerbs = cost.Herbs, DefenseBonus = defenseBonus, OriginEvent = origin, Participants = participants });
     }
 
@@ -52,6 +54,7 @@ public static partial class GameEngine
             {
                 world.Campaigns.Remove(campaign);
                 Log(world, "campaign", "远征中止", $"{attacker.Name}撤回{target.Name}远征军：战局、边界或盟约已经改变。", [attacker.Id], "已耗补给不退还", [campaign.OriginEvent]);
+                ReturnCampaignRelics(world, campaign, attacker);
                 continue;
             }
             if (attacker.Stones >= campaign.MonthlyStones && attacker.Herbs >= campaign.MonthlyHerbs) Spend(attacker, campaign.MonthlyStones, campaign.MonthlyHerbs);
@@ -61,13 +64,22 @@ public static partial class GameEngine
             {
                 world.Campaigns.Remove(campaign);
                 Log(world, "campaign", "粮道断绝，撤军归山", $"{attacker.Name}连续缺乏补给，无法继续围攻{target.Name}。战果没有凭空产生。", [attacker.Id], "远征失败；控制权未变", [campaign.OriginEvent]);
+                ReturnCampaignRelics(world, campaign, attacker);
                 continue;
             }
             campaign.MonthsRemaining--;
             if (campaign.MonthsRemaining > 0) continue;
             world.Campaigns.Remove(campaign);
             Battle(world, attacker, target, campaign.Tactic, campaign.DefenseBonus, true, campaign.OriginEvent, campaign.Supply, campaign.Participants);
+            ReturnCampaignRelics(world, campaign, attacker);
             attacker.WarExhaustion = Math.Min(100, attacker.WarExhaustion + 8);
         }
+    }
+
+    private static void ReturnCampaignRelics(GameState world, Campaign campaign, Sect sect)
+    {
+        if (sect.Eliminated || sect.Exiled || sect.Capital == "") return;
+        foreach (var id in campaign.Participants)
+            if (HeldRelic(world, id) is { } relic && relic.Owner == sect.Id) relic.RegionId = sect.Capital;
     }
 }

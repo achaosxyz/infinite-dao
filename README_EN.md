@@ -16,6 +16,7 @@ Choose a cultivation sect, set its direction, and watch disciples grow and terri
 - **Ten playable sects and 192 regions** across twelve prefectures, with difficulty and world-seed selection.
 - **Strategy-driven automation** for recruitment, construction, cultivation, journeys, and war preparations; you decide major events.
 - **Individual disciples** with focused training, accompanying guardians, breakthroughs, injuries, aging, and death.
+- **Personal relics passed on naturally**: stewards distribute and replace them automatically; you can optionally grant a relic to a focused disciple, while loss and recovery remain in the chronicles.
 - **A unified jade-and-ivory HUD and 50 character illustrations**: sect crests identify factions; portraits stay with each character through succession and save/load. Existing six-sect saves migrate without changing their world.
 - **Years-long campaigns** where higher-realm cultivators can strike multiple lower-realm foes per round; supply, formations, relics, and injuries still affect the outcome—not aggregate power alone.
 - **Exile and rebuilding** with surviving disciples and inherited knowledge; eliminate all other sect lineages to achieve unification.

@@ -340,12 +340,18 @@ public partial class GameClient : Control
             var snapshot = world; CloseOverlay();
             Run(async () =>
             {
-                if (import) { var info = new FileInfo(path); if (info.Length > 8_000_000) throw new GameRuleException("存档超过 8 MB，无法读取。"); await session.Commit(session.Saves.Parse(await File.ReadAllTextAsync(path))); }
+                if (import) await session.Commit(await ReadSaveImport(session.Saves, path));
                 else if (snapshot is not null) await File.WriteAllTextAsync(path, JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
             }, import ? "校验并导入存档" : "导出存档", () => { if (world is not null) { selectedRegion = world.Player.Capital; if (import) showTitle = false; } });
             dialog.QueueFree();
         };
         dialog.Canceled += () => dialog.QueueFree(); dialog.PopupCentered(new Vector2I(900, 600));
+    }
+
+    private static async Task<GameState> ReadSaveImport(GameSaveStore saves, string path)
+    {
+        if (new FileInfo(path).Length > 3L * GameSaveStore.MaximumSaveCharacters) throw new GameRuleException("存档文件超过导入大小限制。");
+        return saves.Parse(await File.ReadAllTextAsync(path));
     }
 
     private void ShowOverlay(string title, Control content)

@@ -9,6 +9,7 @@ public static partial class GameEngine
         if (world.Player.Exiled) throw new GameRuleException("请先为幸存门徒选择重建之地。");
         var chosen = decisions ?? RuleDecisions(world);
         ApplyDecisions(world, chosen);
+        var unaffiliated = world.People.Where(p => p.Alive && p.SectId == "").ToList();
         world.Month++;
         world.CommandsLeft = 2;
         foreach (var sect in world.Sects.Where(s => !s.Eliminated).OrderBy(s => s.Id))
@@ -47,7 +48,15 @@ public static partial class GameEngine
                 {
                     person.Alive = false;
                     person.Biography += $" 青岚历{world.Month / 12 + 1}年寿尽坐化，享年{person.AgeMonths / 12}岁。";
-                    Log(world, "death", "仙路有尽", $"{sect.Name}的{person.Role}{person.Name}寿尽坐化，享年 {person.AgeMonths / 12} 岁。", [sect.Id]);
+                    var death = Log(world, "death", "仙路有尽", $"{sect.Name}的{person.Role}{person.Name}寿尽坐化，享年 {person.AgeMonths / 12} 岁。", [sect.Id]);
+                    var relic = HeldRelic(world, person.Id);
+                    if (relic is not null)
+                    {
+                        var journey = world.Expeditions.FirstOrDefault(e => e.DiscipleId == person.Id || e.GuardianId == person.Id);
+                        var campaign = world.Campaigns.FirstOrDefault(c => c.Participants.Contains(person.Id));
+                        var awayRegion = journey?.RegionId ?? campaign?.Target;
+                        MoveRelic(world, relic, awayRegion is null ? sect.Id : "", null, awayRegion ?? sect.Capital, awayRegion is null ? "遗物归库" : "途中遗失", death);
+                    }
                     continue;
                 }
                 person.Injury = Math.Max(0, person.Injury - (IsAway(world, person.Id) ? 1 : sect.Trait is "herb" or "body" ? 5 : 3));
@@ -76,8 +85,18 @@ public static partial class GameEngine
             if (world.AutoStewardship) StewardDevelop(world, sect);
             else if (sect.Id != world.PlayerId) RivalDevelop(world, sect);
         }
+        foreach (var person in unaffiliated)
+        {
+            person.AgeMonths++; person.RealmMonths++;
+            if (person.AgeMonths < WorldFactory.Lifespans[person.Realm] * 12) continue;
+            person.Alive = false;
+            person.Biography += $" 青岚历{world.Month / 12 + 1}年寿尽坐化。";
+            var death = Log(world, "death", "散修寿尽", $"{person.Name}寿尽坐化。", []);
+            var relic = HeldRelic(world, person.Id);
+            if (relic is not null) MoveRelic(world, relic, "", null, relic.RegionId, "遗物失落", death);
+        }
         AdvanceCampaigns(world);
-        if (world.AutoStewardship) AdvanceExpeditions(world);
+        AdvanceExpeditions(world);
         RivalConflict(world);
         if (world.Status == "playing" && world.PendingEvent is null && world.Month >= world.NextEventMonth)
         {
