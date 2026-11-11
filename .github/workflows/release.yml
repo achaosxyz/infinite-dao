@@ -1,0 +1,89 @@
+name: Windows release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build Windows portable package
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    outputs:
+      source-sha: ${{ env.SOURCE_SHA }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Require a successful main push CI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $runs = gh run list --repo $env:GITHUB_REPOSITORY --workflow ci.yml --branch main --event push --commit $env:SOURCE_SHA --status success --limit 1 --json databaseId | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or @($runs).Count -eq 0) { throw 'A successful main push CI is required for this exact commit.' }
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Install pinned Godot .NET engine and Windows templates
+        shell: pwsh
+        run: ./tools/install-godot.ps1
+      - name: Export, smoke test and create credential-free archive
+        shell: pwsh
+        run: ./tools/package-game.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-portable
+          path: |
+            artifacts/distribution/InfiniteDao-Windows-x64.zip
+            artifacts/distribution/InfiniteDao-Windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish Windows build
+    needs: windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      SOURCE_SHA: ${{ needs.windows.outputs.source-sha }}
+      RELEASE_TAG: windows-${{ github.run_number }}-${{ github.run_attempt }}
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-portable
+          path: distribution
+      - name: Publish verified Windows build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd distribution
+          sha256sum --check InfiniteDao-Windows-x64.zip.sha256
+          printf 'Windows x64 portable build. Extract the complete directory and run Play.cmd or InfiniteDao.exe. No API key is required for offline play.\n\nSource commit: %s\n\nThis is an automatically numbered prerelease build, not a semantic-versioned release. The EXE is not code-signed.\n' "$SOURCE_SHA" > RELEASE_NOTES.md
+          gh release create "$RELEASE_TAG" InfiniteDao-Windows-x64.zip InfiniteDao-Windows-x64.zip.sha256 --target "$SOURCE_SHA" --title "Windows build #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" --notes-file RELEASE_NOTES.md --prerelease --draft
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease

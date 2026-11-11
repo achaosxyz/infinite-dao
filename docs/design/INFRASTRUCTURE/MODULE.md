@@ -1,0 +1,32 @@
+# Infrastructure 模块
+
+## 职责与边界
+
+本模块的有效实现位于 `src/InfiniteDao.Infrastructure/Persistence/`，负责 JSON 存档、导入验证与位置列表，引用 Core。全局结构见 [PROJECT_DESIGN.md](../PROJECT_DESIGN.md)。它不处理 HTTP、模型策略或 Godot 控件。
+
+## 代码入口与数据
+
+- `GameSaveStore.cs`：`SaveAsync`、`LoadAsync`、`Parse`、`ListAsync`。
+- `SaveSummary`：位置、宗门、月份、状态及更新时间的列表摘要。
+- 存档主体为完整 `GameState`，包括随机状态、采用意图、公开 Agent 记忆、历史、战役和历练。
+- 槽位只接受 `auto`、`one`、`two`、`three`，不把任意输入直接拼成路径。
+
+## 关键流程
+
+1. 保存前调用 Core 校验世界，序列化为 JSON，并检查容量。
+2. 将内容写入目标位置的临时文件，成功后用文件替换提交，避免半写入破坏有效存档。
+3. 读取和导入经 `Parse` 校验实体关系、模式、状态、难度、宗门模板、标签和因果引用。
+4. 解析成功仅返回候选世界；Application 提交后才替换当前世界并作废旧后台任务。
+5. 列表读取有效存档摘要，损坏存档显示无效状态，不冒充新世界。
+
+## 当前边界
+
+- `GameSaveStore.MaximumSaveCharacters` 为64000000字符；原生文件导入入口另有限制，见 Game 模块与实现。
+- 导入宗门 ID、名字、颜色、标记、肖像、性格等模板定义必须与当前游戏一致。
+- 关键标签不接受标记字符或控制字符；重复 JSON 属性和不合法状态不被采用。
+- 存档目录由 Application 注入；验证可使用隔离目录，不与玩家存档混用。
+- 密钥、本地连接配置、HTTP 客户端、后台任务与隐藏思考不属于持久化数据。
+
+## 变更与验证
+
+修改序列化、字段、路径、容量或导入规则时，同时核对 [核心设计的数据模型](../PROJECT_DESIGN.md) 和 Core 的校验，并运行 Integration 的保存恢复、无效输入与任务隔离测试。不得为了文档整理迁移、删除或覆盖玩家存档。操作步骤见 [开发变更流程](../../DEVELOPMENT.md)。
