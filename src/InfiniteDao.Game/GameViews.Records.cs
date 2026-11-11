@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Godot;
 using InfiniteDao.Core.Game;
 using static InfiniteDao.Game.NativeTheme;
@@ -107,10 +108,32 @@ public partial class GameClient
         foreach (var stage in plan.Stages) content.AddChild(Text("· " + stage, 15, Paper, true));
         content.AddChild(Text("重新考虑条件：" + plan.ReconsiderWhen, 14, Gold, true));
         if (memory.Summary.Length > 0) { content.AddChild(Heading("长期记忆摘要", 21)); content.AddChild(Text(memory.Summary, 14, Muted, true)); }
-        content.AddChild(Heading("最近公开会话 · 节选", 21));
-        foreach (var entry in memory.Conversation.TakeLast(4))
-        { content.AddChild(Text($"{Date(entry.Month)} · {(entry.Role == "assistant" ? "公开提交" : "世界观察与反馈")}", 12, Gold)); content.AddChild(Text(entry.Text.Length > 4000 ? entry.Text[..4000] + "\n（界面节选，完整原文随存档保留）" : entry.Text, 12, Muted, true)); }
+        content.AddChild(Heading("最近议政回顾", 21));
+        var reviews = memory.Archive.Concat(memory.Conversation).Reverse()
+            .Where(e => e.Role == "assistant").Select(e => (Entry: e, Plan: ReadPublicPlan(e)))
+            .Where(e => e.Plan is not null).Take(3).Reverse().ToArray();
+        foreach (var review in reviews)
+        {
+            var previous = review.Plan!;
+            var target = state.Regions.SingleOrDefault(r => r.Id == previous.Target)?.Name ?? "暂无出征目标";
+            content.AddChild(Text($"{Date(review.Entry.Month)} · {Policy(previous.Policy)} · {target}", 12, Gold));
+            content.AddChild(Text(previous.Goal + "\n" + previous.Reason, 14, Paper, true));
+        }
+        if (reviews.Length == 0) content.AddChild(Text("尚无可展示的历史议政，当前计划见上方。", 14, Muted, true));
+        content.AddChild(Text("界面仅展示公开计划摘要；局势快照与工具记录保存在本地，供宗门延续记忆，不在此回显原始数据包。", 12, Muted, true));
         ShowOverlay("议政计划与记忆", content);
+    }
+
+    private static SectAgentPlan? ReadPublicPlan(AgentConversationEntry entry)
+    {
+        const string prefix = "submit_strategy 公开提交：";
+        if (!entry.Text.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        try
+        {
+            var plan = JsonSerializer.Deserialize<SectAgentPlan>(entry.Text[prefix.Length..], new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return plan is { Goal.Length: > 0 and <= 500, Reason.Length: > 0 and <= 300 } && WorldFactory.Policies.Contains(plan.Policy) ? plan : null;
+        }
+        catch (JsonException) { return null; }
     }
 
     private Control TreasuryView()

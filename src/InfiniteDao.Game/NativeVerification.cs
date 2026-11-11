@@ -58,6 +58,29 @@ public partial class GameClient
             await Press("guardian-" + disciple.Id); await Press("assign-guardian-" + guardian.Id);
             Check(world!.People.Single(p => p.Id == disciple.Id).GuardianId == guardian.Id, "Guardian selection must persist.");
             Screenshot("people"); checks.Add("native disciple focus and higher-realm guardian assignment");
+            var beforeMemoryView = world.Copy();
+            var memoryFixture = world.Copy();
+            var rival = memoryFixture.Sects.First(s => s.Id != memoryFixture.PlayerId);
+            var currentPlan = new SectAgentPlan { Policy = "cultivation", Goal = "稳固根基，培养门人", Reason = "先壮大道统，再图山河。", Stages = ["积蓄供养"], ReconsiderWhen = "边境遭到进犯" };
+            var previousPlan = new SectAgentPlan { Policy = "prosperity", Goal = "先养精蓄锐，备足供养", Reason = "当前尚需积累。", Stages = ["积累储备"], ReconsiderWhen = "军需充足" };
+            const string rawObservation = "{\"type\":\"current_observation\",\"raw_packet_sentinel\":true}";
+            memoryFixture.AgentMemories.RemoveAll(m => m.SectId == rival.Id);
+            memoryFixture.AgentMemories.Add(new SectAgentMemory {
+                SectId = rival.Id, Plan = currentPlan, LastReviewMonth = memoryFixture.Month, NextReviewMonth = memoryFixture.Month + 60, Summary = "宗门先求稳固，再待发展之机。",
+                Archive = [new AgentConversationEntry { Month = memoryFixture.Month, Role = "assistant", Text = "submit_strategy 公开提交：" + JsonSerializer.Serialize(previousPlan, new JsonSerializerOptions(JsonSerializerDefaults.Web)) }],
+                Conversation = [new AgentConversationEntry { Month = memoryFixture.Month, Text = rawObservation },
+                    new AgentConversationEntry { Month = memoryFixture.Month, Role = "assistant", Text = "submit_strategy 公开提交：" + JsonSerializer.Serialize(currentPlan, new JsonSerializerOptions(JsonSerializerDefaults.Web)) },
+                    new AgentConversationEntry { Month = memoryFixture.Month, Role = "assistant", Text = "submit_strategy 公开提交：{invalid_packet_sentinel" },
+                    new AgentConversationEntry { Month = memoryFixture.Month, Role = "assistant", Text = "submit_strategy 公开提交：null" },
+                    new AgentConversationEntry { Month = memoryFixture.Month, Role = "assistant", Text = "submit_strategy 公开提交：{invalid_packet_sentinel" }]
+            });
+            await SetVerificationWorld(memoryFixture); await Press("nav-diplomacy"); await Press("agent-memory-" + rival.Id);
+            var memoryLabels = string.Join('\n', overlay!.FindChildren("*", "Label", true, false).OfType<Label>().Select(label => label.Text));
+            Check(memoryLabels.Contains(currentPlan.Goal) && memoryLabels.Contains(previousPlan.Goal) && memoryLabels.Contains(NativeTheme.Policy(currentPlan.Policy)), "Agent memory must show readable current and archived plans.");
+            Check(!memoryLabels.Contains("raw_packet_sentinel") && !memoryLabels.Contains("submit_strategy") && !memoryLabels.Contains("invalid_packet_sentinel"), "Agent memory must not echo observation or malformed tool packets.");
+            Check(world!.AgentMemories.Single(m => m.SectId == rival.Id).Conversation[0].Text == rawObservation, "Readable presentation must preserve original Agent context.");
+            Screenshot("agent-memory"); await Press("close-dialog"); await SetVerificationWorld(beforeMemoryView);
+            checks.Add("readable current and archived Agent plans; raw observations and malformed JSON hidden without changing saved context");
             var actions = 0; var advances = 0;
             for (var step = 0; step < 30 && world!.Month < 60; step++)
             {
