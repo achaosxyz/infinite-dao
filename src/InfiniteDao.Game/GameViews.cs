@@ -123,11 +123,12 @@ public partial class GameClient
         }
         var bulletin = Card(message, padding: 7); bulletin.AddThemeStyleboxOverride("panel", Box(Raised, Colors.Transparent, 0, 7)); footer.AddChild(bulletin);
         var calendar = Row(10); calendar.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        calendar.SetMeta("hud_calendar_content", true);
         calendar.AddChild(Calendar(state.Month, 44)); var date = Stack(1); date.SizeFlagsVertical = SizeFlags.ShrinkCenter; date.AddChild(Heading(Date(state.Month), 18, DeepJade));
         date.AddChild(Text(paused || state.PendingEvent is not null || sect.Exiled || state.Status != "playing" ? "Ⅱ 世界已暂停" : "▷ 岁月演进中", 12, state.PendingEvent is not null ? Cinnabar : Jade)); calendar.AddChild(date);
         var calendarPlate = new PanelContainer { CustomMinimumSize = new Vector2(292, 76), SizeFlagsHorizontal = SizeFlags.Fill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         calendarPlate.SetMeta("hud_calendar", true);
-        var calendarFrame = Frame("hud-calendar", 8, 34); calendarFrame.ContentMarginTop = 18;
+        var calendarFrame = Frame("hud-calendar", 12, 12); calendarFrame.ContentMarginLeft = 16; calendarFrame.ContentMarginRight = 16;
         calendarPlate.AddThemeStyleboxOverride("panel", calendarFrame); calendarPlate.AddChild(calendar); footer.AddChild(calendarPlate);
         if (state.PendingEvent is not null) footer.AddChild(Button("前往议事", "open-council", () => Navigate("council")));
         var speed = new OptionButton { CustomMinimumSize = new Vector2(155, 42), SizeFlagsVertical = SizeFlags.ShrinkCenter }; foreach (var label in new[] { "观岁 · 一载12秒", "流年 · 一载3秒", "闭关 · 一载0.6秒" }) speed.AddItem(label);

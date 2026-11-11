@@ -253,7 +253,13 @@ public partial class GameClient
             var bounds = FindControl<Button>(c => c.HasMeta("action") && c.GetMeta("action").AsString() == key).GetGlobalRect();
             Check(Math.Abs(bounds.GetCenter().Y - footer.GetCenter().Y) <= 1, "Time controls must share the footer's vertical center: " + key);
         }
-        Check(FindControl<Control>(c => c.HasMeta("hud_calendar")).Size.Y <= 88, "Calendar plaque must keep a compact height.");
+        var calendar = FindControl<Control>(c => c.HasMeta("hud_calendar")).GetGlobalRect();
+        var calendarContent = FindControl<Control>(c => c.HasMeta("hud_calendar_content")).GetGlobalRect();
+        Check(calendar.Size.Y <= 88, "Calendar plaque must keep a compact height.");
+        Check(calendarContent.Position.X >= calendar.Position.X + 15 && calendarContent.End.X <= calendar.End.X - 15
+            && calendarContent.Position.Y >= calendar.Position.Y + 11 && calendarContent.End.Y <= calendar.End.Y - 11,
+            "Calendar dial and text must keep safe insets from the plaque border.");
+        Check(Math.Abs(calendarContent.GetCenter().Y - calendar.GetCenter().Y) <= 1, "Calendar contents must be vertically centered within the plaque.");
         var rail = FindControl<Control>(c => c.HasMeta("hud_rail")).GetGlobalRect();
         var summary = FindControl<Control>(c => c.HasMeta("hud_rail_summary")).GetGlobalRect();
         Check(summary.Position.X >= rail.Position.X + 15 && summary.End.Y <= rail.End.Y - 15, "Sect policy summary must stay inside the navigation frame with a safe inset.");

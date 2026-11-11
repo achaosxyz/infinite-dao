@@ -179,7 +179,8 @@ public static partial class GameEngine
         {
             var sect = intent.Sect; var target = intent.Target!;
             if (engaged.Contains(sect.Id) || claimed.Contains(target.Id) || world.Campaigns.Any(c => c.Target == target.Id) || target.Owner == sect.Id) continue;
-            if (Members(world, sect).Count(p => !IsAway(world, p.Id) && p.Injury < 60) < 2) continue;
+            var participants = CampaignMembers(world, sect);
+            if (participants.Count == 0) continue;
             var defender = world.Sects.FirstOrDefault(s => s.Id == target.Owner);
             if (defender is not null && (engaged.Contains(defender.Id) || AtPeace(world, sect, defender))) continue;
             var costs = CampaignCosts(world, sect, target);
@@ -187,7 +188,7 @@ public static partial class GameEngine
                 || sect.Herbs < 20 + costs.Duration * costs.Herbs)) continue;
             var aggression = sect.Policy == "expansion" ? 0.8 : sect.Policy == "prosperity" ? 0.15 : 0.4;
             if (world.Random() > aggression) continue;
-            if (defender is not null && Power(world, sect) < Power(world, defender) * 0.8) continue;
+            if (!CanChallengeGarrison(world, sect, target, participants)) continue;
             if (defender?.Id == world.PlayerId)
             {
                 if (world.PendingEvent is not null || world.Month < (world.Difficulty == "hard" ? 36 : world.Difficulty == "story" ? 120 : 60)) continue;

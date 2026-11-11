@@ -22,13 +22,19 @@ public static partial class GameEngine
         return (int)(Power(world, owner) * (.52 + region.Fort * .12) * (IsMobilized(world, owner) ? .65 : 1) / divided);
     }
 
+    private static List<Cultivator> CampaignMembers(GameState world, Sect sect)
+    {
+        var available = Members(world, sect).Where(p => !IsAway(world, p.Id) && p.Injury < 60)
+            .OrderByDescending(p => p.Realm).ThenByDescending(p => p.Potential).ThenBy(p => p.Id).ToList();
+        return available.Count < 2 ? [] : available.Take(Math.Max(1, available.Count * 7 / 10)).ToList();
+    }
+
     private static void StartCampaign(GameState world, Sect attacker, Region target, string tactic, double defenseBonus = 1)
     {
         if (IsMobilized(world, attacker)) throw new GameRuleException("宗门主力已在远征，需待战役结束后再开新战线。");
         if (world.Campaigns.Any(c => c.Target == target.Id)) throw new GameRuleException("该地已有战役进行，不能重复派遣同一主力。");
-        var available = Members(world, attacker).Where(p => !IsAway(world, p.Id) && p.Injury < 60).OrderByDescending(p => p.Realm).ThenByDescending(p => p.Potential).ThenBy(p => p.Id).ToList();
-        if (available.Count < 2) throw new GameRuleException("可调动门人不足，需等历练归山或养伤。");
-        var participants = available.Take(Math.Max(1, available.Count * 7 / 10)).Select(p => p.Id).ToList();
+        var participants = CampaignMembers(world, attacker).Select(p => p.Id).ToList();
+        if (participants.Count == 0) throw new GameRuleException("可调动门人不足，需等历练归山或养伤。");
         Spend(attacker, 130, 20);
         var cost = CampaignCosts(world, attacker, target);
         var origin = Log(world, "campaign", $"{attacker.Name}远征{target.Name}", $"主力集结、行军与围攻，预计{cost.Duration}个月。每月消耗灵石{cost.Stones}、灵材{cost.Herbs}。期间不能开启第二场远征，战果尚未结算。", target.Owner == "" ? [attacker.Id] : [attacker.Id, target.Owner], "备军灵石 -130；灵材 -20");
