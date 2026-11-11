@@ -15,7 +15,7 @@ public sealed class SectPortraitRegressionTests
         CollectionAssert.AreEqual(LegacySectIds.Concat(NewSectIds).ToArray(), templates.Select(sect => sect.Id).ToArray());
 
         var standard = WorldFactory.Create("leiting", 731, "rules", "normal");
-        Assert.AreEqual(3, standard.SchemaVersion);
+        Assert.AreEqual(4, standard.SchemaVersion);
         Assert.HasCount(10, standard.Sects);
         Assert.HasCount(192, standard.Regions);
         Assert.AreEqual(16, standard.MapColumns);
@@ -25,7 +25,7 @@ public sealed class SectPortraitRegressionTests
         foreach (var template in templates)
         {
             var compact = WorldFactory.Create(template.Id, 731, "rules", "normal", compact: true);
-            Assert.AreEqual(3, compact.SchemaVersion);
+            Assert.AreEqual(4, compact.SchemaVersion);
             Assert.AreEqual(template.Id, compact.PlayerId);
             Assert.HasCount(10, compact.Sects);
             Assert.HasCount(20, compact.Regions);
@@ -114,7 +114,7 @@ public sealed class SectPortraitRegressionTests
         foreach (var person in GameEngine.Members(world, sect).Where(person => person.Id != leader.Id))
         {
             person.Realm = 0;
-            person.AgeMonths = 30 * 12;
+            person.AgeMonths = 20 * 12;
             person.Loyalty = 1;
             person.Progress = 0;
         }

@@ -117,7 +117,7 @@ public partial class GameClient : Control
             statusLabel.Text = (session.Activity.Length > 0 ? session.Activity : notice) + new string('·', 1 + (int)(Time.GetTicksMsec() / 500 % 3));
         else if (statusLabel is not null && IsInstanceValid(statusLabel) && session.Activity.Length > 0)
             statusLabel.Text = session.Activity;
-        if (paused || busy || overlay is not null || world is null || showTitle) return;
+        if (paused || page != "map" || busy || overlay is not null || world is null || showTitle) return;
         elapsed += delta;
         if (elapsed >= secondsPerMonth) { elapsed = 0; Advance(false); }
     }
@@ -231,7 +231,7 @@ public partial class GameClient : Control
             await session.Execute(revision, new GameCommand(type, target, option), lifetime.Token);
         }, "宗门安排结算中", () =>
         {
-            if (type == "choose" && world is { PendingEvent: null, Status: "playing" } && !world.Player.Exiled && !verification)
+            if (type == "choose" && page == "map" && overlay is null && !pauseRequested && world is { PendingEvent: null, Status: "playing" } && !world.Player.Exiled && !verification)
             { paused = false; elapsed = 0; }
         });
     }
@@ -266,10 +266,14 @@ public partial class GameClient : Control
         if (!paused) { paused = true; Render(); return; }
         if (busy || world.PendingEvent is not null || world.Player.Exiled || world.Status != "playing")
         { notice = "请先处理议事或重建山门，再继续演进。"; Render(); return; }
-        paused = false; elapsed = 0; Render();
+        page = "map"; paused = false; pauseRequested = false; elapsed = 0; Render();
     }
 
-    private void Navigate(string destination) { page = destination; Render(); }
+    private void Navigate(string destination)
+    {
+        if (destination != "map") { paused = true; pauseRequested = true; elapsed = 0; }
+        page = destination; Render();
+    }
 
     private void Render() => renderRequested = true;
 
@@ -356,7 +360,7 @@ public partial class GameClient : Control
 
     private void ShowOverlay(string title, Control content)
     {
-        paused = true; CloseOverlay();
+        paused = true; pauseRequested = true; elapsed = 0; CloseOverlay();
         overlay = new Control { MouseFilter = MouseFilterEnum.Stop }; AddChild(overlay); overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         var shade = new ColorRect { Color = new Color(0, .025f, .035f, .86f) }; overlay.AddChild(shade); shade.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         var center = new CenterContainer(); overlay.AddChild(center); center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);

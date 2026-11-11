@@ -3,9 +3,15 @@ namespace InfiniteDao.Core.Game;
 public static partial class WorldFactory
 {
     public const int PortraitCount = 50;
-    public static readonly string[] RealmNames = ["炼气", "筑基", "金丹", "元婴", "化神", "返虚"];
-    public static readonly int[] Lifespans = [120, 220, 450, 900, 1600, 2600];
-    public static readonly int[] MinimumRealmMonths = [18, 60, 180, 600, 1800, 0];
+    public const int MaximumRealm = 7;
+    public static readonly string[] RealmNames = ["炼气", "筑基", "金丹", "元婴", "化神", "分神", "合体", "大乘"];
+    public static readonly int[] Lifespans = [28, 36, 48, 62, 78, 94, 110, 130];
+    public static readonly int[] MinimumRealmMonths = [6, 12, 24, 36, 48, 60, 72, 0];
+    public static readonly string[] InnateTraitNames = ["凡体", "通灵之体", "异灵根", "天灵根", "先天道体"];
+    public static readonly int[] InnateRealmLimits = [2, 3, 4, 6, 7];
+    public static readonly double[] InnateCultivationMultipliers = [.8, 1, 1.4, 2, 2.8];
+    public static readonly double[] InnateCombatMultipliers = [1, 1.1, 1.3, 1.6, 2];
+    public static int InnateTraitFromRoll(int roll) => roll < 55 ? 0 : roll < 80 ? 1 : roll < 92 ? 2 : roll < 98 ? 3 : 4;
     public static readonly string[] Policies = ["balanced", "prosperity", "cultivation", "expansion", "diplomacy"];
     public static readonly string[] PolicyNames = ["均衡发展", "休养生息", "潜心修炼", "开疆拓土", "远交近攻"];
 
@@ -70,10 +76,11 @@ public static partial class WorldFactory
                 var person = NewCultivator(state, sect.Id);
                 person.Realm = n == 0 ? 2 : n < 4 ? 1 : 0;
                 person.RealmMonths = n == 0 ? state.Roll(48, 120) : n < 4 ? state.Roll(12, 36) : state.Roll(0, 8);
-                person.AgeMonths = n == 0 ? state.Roll(80, 160) * 12 : state.Roll(18, 60) * 12;
+                person.AgeMonths = n == 0 ? state.Roll(34, 42) * 12 : n < 4 ? state.Roll(25, 32) * 12 : state.Roll(18, 24) * 12;
                 if (n == 0)
                 {
                     person.Name = leaders[sect.Portrait]; person.Role = "掌门"; person.Potential = 80 + state.Roll(0, 15);
+                    person.InnateTrait = Math.Max(1, person.InnateTrait);
                     person.Biography = $"承继{sect.Name}道统，立誓守护门下弟子。"; sect.LeaderId = person.Id;
                 }
                 else if (n < 4) person.Role = "长老";
@@ -107,6 +114,8 @@ public static partial class WorldFactory
         string[] temperaments = ["沉稳", "果敢", "仁厚", "执着", "机敏", "孤傲"];
         var sect = state.Sects.Single(s => s.Id == sectId);
         var person = new Cultivator { Id = state.NewId(), Name = surnames[state.Roll(0, 15)] + given[state.Roll(0, 15)], SectId = sectId, AgeMonths = state.Roll(16, 28) * 12, Potential = state.Roll(40, 95), Temperament = temperaments[state.Roll(0, 5)], Portrait = ChoosePortrait(state), Technique = sect.Trait switch { "fire" => "赤霞焚天诀", "herb" => "青木长生经", "forge" => "百炼金身诀", "water" => "镜水无相经", "ice" => "玄霜寂照录", "thunder" => "九霄御雷经", "body" => "金莲不动经", "star" => "周天观星诀", "shadow" => "幽篁无影录", _ => "青云御剑诀" }, Biography = "初入仙途，前路未定。" };
+        person.AgeMonths = Math.Min(person.AgeMonths, 22 * 12);
+        person.InnateTrait = InnateTraitFromRoll(state.Roll(0, 99));
         state.People.Add(person);
         return person;
     }

@@ -6,18 +6,18 @@ public static partial class GameEngine
     public static List<Region> Lands(GameState world, Sect sect) => world.Regions.Where(r => r.Owner == sect.Id).ToList();
     public static int Power(GameState world, Sect sect)
     {
-        double[] weights = [5, 16, 48, 135, 350, 850];
+        double[] weights = [5, 16, 48, 135, 350, 850, 2100, 5200];
         var basePower = Members(world, sect).Sum(p => weights[p.Realm] * (1 - p.Injury / 140d) * (0.8 + p.Potential / 200d)
-            * (ActiveRelicTemplate(world, p) is { Category: "attack" } t ? 1 + t.Bonus : 1));
+            * WorldFactory.InnateCombatMultipliers[p.InnateTrait] * (ActiveRelicTemplate(world, p) is { Category: "attack" } t ? 1 + t.Bonus : 1));
         var relicPower = world.Relics.Where(r => r.Scope == "sect" && r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power);
         return (int)((basePower + relicPower) * (1 + sect.Training * 0.09) * TraitCombatMultiplier(sect) * (0.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004));
     }
     private static double TraitCombatMultiplier(Sect sect) => sect.Trait switch { "sword" => 1.12, "fire" => 1.08, "thunder" => 1.10, _ => 1 };
-    public static int Income(GameState world, Sect sect) => Lands(world, sect).Sum(r => 12 + r.Mine * 7 + r.Development * 8)
-        * (sect.Policy == "prosperity" ? 14 : 10) / 10 + (sect.Trait == "forge" ? 15 : 0);
-    public static int Upkeep(GameState world, Sect sect) => Members(world, sect).Sum(p => 1 + p.Realm * 2) + Math.Max(0, Lands(world, sect).Count - (8 + sect.Doctrine * 4)) * 12;
-    public static int HerbIncome(GameState world, Sect sect) => Lands(world, sect).Sum(r => 2 + r.HerbYield * 3 + r.Development)
-        * (sect.Trait == "herb" ? 14 : 10) / 10;
+    public static int Income(GameState world, Sect sect) => (int)(Lands(world, sect).Sum(r => 12 + r.Mine * 7 + r.Development * 8)
+        * (sect.Policy == "prosperity" ? 14 : 10) / 10d * FoundationMultiplier(sect)) + (sect.Trait == "forge" ? 15 : 0);
+    public static int Upkeep(GameState world, Sect sect) => Members(world, sect).Sum(p => CultivatorStoneUpkeep[p.Realm]) + Math.Max(0, Lands(world, sect).Count - (8 + sect.Doctrine * 4)) * 12;
+    public static int HerbIncome(GameState world, Sect sect) => (int)(Lands(world, sect).Sum(r => 2 + r.HerbYield * 3 + r.Development)
+        * (sect.Trait == "herb" ? 14 : 10) / 10d * FoundationMultiplier(sect));
     public static int Log(GameState world, string kind, string title, string text, string[] sects, string delta = "", int[]? causes = null)
     {
         var id = world.NewId();
@@ -96,19 +96,22 @@ public static partial class GameEngine
             }
             case "train":
                 if (sect.Training >= 10) throw new GameRuleException("军阵已臻化境。");
-                Spend(sect, 160 + sect.Training * 60, 30); sect.Training++;
+                var trainingCost = TrainingUpgradeCost(sect);
+                Spend(sect, trainingCost.Stones, trainingCost.Herbs); sect.Training++;
                 foreach (var p in Members(world, sect)) p.Progress = Math.Min(120, p.Progress + 8);
                 Log(world, "cultivation", "演武传功", $"军阵升至 {sect.Training} 级，全体修士获得修为进展。", [sect.Id], "军阵 +1；修为 +8"); break;
             case "research":
                 if (sect.Doctrine >= 8) throw new GameRuleException("道藏已达当前世界巅峰。");
-                Spend(sect, 220 + sect.Doctrine * 80, 60); sect.Doctrine++;
+                var doctrineCost = DoctrineUpgradeCost(sect);
+                Spend(sect, doctrineCost.Stones, doctrineCost.Herbs); sect.Doctrine++;
                 Log(world, "cultivation", "道藏推演", $"{sect.Name}道藏升至 {sect.Doctrine} 阶，长期修炼效率提高。", [sect.Id], "道藏 +1"); break;
             case "breakthrough":
             {
                 if (!int.TryParse(command.Target, out var id)) throw new GameRuleException("人物无效。");
                 var person = Members(world, sect).SingleOrDefault(p => p.Id == id) ?? throw new GameRuleException("无法指派此人突破。");
-                if (person.Realm >= 5 || person.Progress < 70 || person.Injury > 40 || person.RealmMonths < WorldFactory.MinimumRealmMonths[person.Realm]) throw new GameRuleException("突破需修为达到 70、伤势不超过 40，且当前境界修龄已满。炼气至少 18 月、筑基 60 月、金丹 180 月，不能靠连续演武瞬间跨境。");
-                Spend(sect, 100 + person.Realm * 100, 45 + person.Realm * 30);
+                if (!CanAdvanceRealm(person) || person.Progress < 70 || person.Injury > 40 || person.RealmMonths < WorldFactory.MinimumRealmMonths[person.Realm]) throw new GameRuleException("突破需未达先天特性上限、修为达到70、伤势不超过40，且当前境龄已满。连续演武不能跨过境龄限制。");
+                var cost = BreakthroughCost(person, true);
+                Spend(sect, cost.Stones, cost.Herbs);
                 Breakthrough(world, sect, person, true); break;
             }
             case "heal":
@@ -159,6 +162,14 @@ public static partial class GameEngine
                 world.PendingEvent = BattleCouncil(world, sect, target, false);
                 return;
             }
+            case "retention":
+            {
+                var person = Members(world, sect).SingleOrDefault(p => p.Id.ToString() == command.Target) ?? throw new GameRuleException("只能安排本宗在世门人。");
+                if (person.Realm != WorldFactory.MaximumRealm || command.Option is not ("on" or "off")) throw new GameRuleException("只有大乘修士可以选择留世或顺应飞升。");
+                person.RetainInWorld = command.Option == "on"; person.AscensionWarned = true;
+                Log(world, "decision", person.RetainInWorld ? "议定留世" : "顺应飞升", $"{person.Name}{(person.RetainInWorld ? "大乘满十年后逐月供给遮天灵阵；资源不足则自动飞升。" : "大乘满十年后自动飞升，遗宝传承、底蕴归宗。")}", [sect.Id]);
+                break;
+            }
             case "settle":
                 Settle(world, sect, command.Target); break;
             default: throw new GameRuleException("未知宗令。");
@@ -177,7 +188,7 @@ public static partial class GameEngine
 
     private static void Breakthrough(GameState world, Sect sect, Cultivator person, bool prepared)
     {
-        var chance = Math.Clamp(0.35 + person.Potential / 200d + sect.Doctrine * 0.025 + (prepared ? 0.12 : 0), 0.3, 0.96);
+        var chance = Math.Clamp(.25 + person.Potential / 250d + sect.Doctrine * .02 + person.InnateTrait * .065 - person.Realm * .035 + (prepared ? .12 : 0), .15, .96);
         person.Progress = 10;
         if (world.Random() < chance)
         {
@@ -194,29 +205,29 @@ public static partial class GameEngine
 
     public static void Validate(GameState world)
     {
-        if (world.SchemaVersion is not (1 or 2 or 3) || world.SchemaVersion == 1 && world.Sects.Count != 6 || world.SchemaVersion >= 2 && world.Sects.Count is not (6 or 10) || world.MapColumns is < 4 or > 64 || world.MapRows is < 4 or > 64 || world.Regions.Count != world.MapColumns * world.MapRows || world.Month < 0 || world.Revision < 0) throw new GameRuleException("存档结构或版本无效。");
+        if (world.SchemaVersion != 4) throw new GameRuleException("存档版本不兼容；此版需要新开局，旧档文件不会被修改。");
+        if (world.Sects.Count != 10 || world.MapColumns is < 4 or > 64 || world.MapRows is < 4 or > 64 || world.Regions.Count != world.MapColumns * world.MapRows || world.Month < 0 || world.Revision < 0) throw new GameRuleException("存档结构无效。");
         if (world.People.Count > 100000 || world.History.Count > 1000000 || world.Decisions.Count > 2000000) throw new GameRuleException("存档数据量超出安全限制。");
         if (world.Sects.Select(s => s.Id).Distinct().Count() != world.Sects.Count || world.Regions.Select(r => r.Id).Distinct().Count() != world.Regions.Count || world.Regions.Select(r => r.Index).Distinct().Count() != world.Regions.Count || world.People.Select(p => p.Id).Distinct().Count() != world.People.Count) throw new GameRuleException("实体身份重复。");
         if (!world.Sects.Any(s => s.Id == world.PlayerId)) throw new GameRuleException("玩家宗门不存在。");
         foreach (var sect in world.Sects)
         {
-            if (sect.Stones < 0 || sect.Herbs < 0 || sect.Stability is < 0 or > 100 || sect.Doctrine is < 1 or > 8 || sect.Training is < 1 or > 10 || sect.WarExhaustion is < 0 or > 100) throw new GameRuleException("宗门资源或属性越界。");
+            if (sect.Stones < 0 || sect.Herbs < 0 || sect.Stability is < 0 or > 100 || sect.Doctrine is < 1 or > 8 || sect.Training is < 1 or > 10 || sect.WarExhaustion is < 0 or > 100 || sect.Foundation is < 0 or > 100000) throw new GameRuleException("宗门资源或属性越界。");
             if (sect.Eliminated && Lands(world, sect).Count > 0) throw new GameRuleException("已灭宗门仍占有领地。");
             if (!sect.Eliminated && !Members(world, sect).Any(p => p.Id == sect.LeaderId)) throw new GameRuleException("掌门身份无效。");
         }
         foreach (var r in world.Regions)
             if ((r.Owner != "" && !world.Sects.Any(s => s.Id == r.Owner)) || r.Development is < 1 or > 5 || r.Fort is < 1 or > 5 || r.Population < 0 || r.Index < 0 || r.Index >= world.Regions.Count || r.Neighbors.Any(n => !world.Regions.Any(x => x.Id == n && x.Neighbors.Contains(r.Id)))) throw new GameRuleException("地图属性或所有权无效。");
         foreach (var p in world.People)
-            if (p.Realm is < 0 or > 5 || p.Injury is < 0 or > 100 || p.AgeMonths < 0 || p.RealmMonths < 0 || p.Progress is < 0 or > 120 || p.Portrait < 0 || p.Portrait >= (world.SchemaVersion == 1 ? 6 : WorldFactory.PortraitCount) || !world.Sects.Any(s => s.Id == p.SectId) && p.SectId != "") throw new GameRuleException("人物状态无效。");
+            if (p.Realm < 0 || p.Realm > WorldFactory.MaximumRealm || p.InnateTrait is < 0 or > 4 || p.Ascended && (p.Alive || p.Realm != WorldFactory.MaximumRealm) || p.RetainInWorld && (!p.Alive || p.Realm != WorldFactory.MaximumRealm) || p.Injury is < 0 or > 100 || p.AgeMonths < 0 || p.RealmMonths < 0 || p.Progress is < 0 or > 120 || p.Portrait < 0 || p.Portrait >= WorldFactory.PortraitCount || !world.Sects.Any(s => s.Id == p.SectId) && p.SectId != "") throw new GameRuleException("人物状态无效。");
+        if (world.PendingEvent is { } pending && (pending.ResourceScale is < 1 or > 10000 || pending.Choices.Any(c => c.Stones < 0 || c.Herbs < 0)))
+            throw new GameRuleException("议事资源规模或费用无效。");
         var seen = new HashSet<int>();
         foreach (var e in world.History)
         {
             if (e.Id <= 0 || e.Id >= world.NextId || e.Causes.Any(c => !seen.Contains(c)) || !seen.Add(e.Id)) throw new GameRuleException("历史因果引用无效。");
         }
-        if (world.SchemaVersion < 3 && (world.History.Any(e => e.RelicChange != null) || world.Relics.Any(r => r.Scope != "sect" || r.TemplateId != "" || r.HolderId != null || r.RegionId != "" || r.KeepAssigned || r.LastEventId != 0)
-            || world.BattleReports.SelectMany(r => r.Exchanges).Any(e => e.RelicName != "" || e.RelicCategory != "" || e.RelicTier != 0 || e.RelicBonus != 0)))
-            throw new GameRuleException("旧版存档包含不兼容的个人法宝数据。");
-        if (world.SchemaVersion == 3) PersonalRelics.Validate(world, seen);
+        PersonalRelics.Validate(world, seen);
         if (world.Campaigns.Count > world.Sects.Count || world.Campaigns.Select(c => c.Attacker).Distinct().Count() != world.Campaigns.Count || world.Campaigns.Select(c => c.Target).Distinct().Count() != world.Campaigns.Count) throw new GameRuleException("远征军或战线重复。");
         foreach (var c in world.Campaigns)
             if (!world.Sects.Any(s => s.Id == c.Attacker) || !world.Regions.Any(r => r.Id == c.Target) || c.Defender != "" && !world.Sects.Any(s => s.Id == c.Defender) || c.MonthsRemaining < 1 || c.MonthsRemaining > c.Duration || c.Duration < 2 || c.MonthlyStones < 0 || c.MonthlyHerbs < 0 || !double.IsFinite(c.Supply) || c.Supply is < 0 or > 1 || !double.IsFinite(c.DefenseBonus) || c.DefenseBonus is < 1 or > 1.45 || !seen.Contains(c.OriginEvent)) throw new GameRuleException("战役状态无效。");
@@ -231,7 +242,7 @@ public static partial class GameEngine
         if (deployed.Distinct().Count() != deployed.Count || deployed.Any(id => !world.People.Any(p => p.Id == id))) throw new GameRuleException("门人重复部署或不存在。");
         foreach (var report in world.BattleReports)
             if (!seen.Contains(report.EventId) || !world.Regions.Any(r => r.Id == report.RegionId) || report.Rounds is < 0 or > 48
-                || !double.IsFinite(report.FormationBonus) || report.Exchanges.Any(e => !double.IsFinite(e.Damage) || e.Damage < 0 || !double.IsFinite(e.RealmMultiplier) || e.RealmMultiplier <= 0 || e.AttackerRealm is < 0 or > 5 || e.DefenderRealm is < 0 or > 5
+                || !double.IsFinite(report.FormationBonus) || report.Exchanges.Any(e => !double.IsFinite(e.Damage) || e.Damage < 0 || !double.IsFinite(e.RealmMultiplier) || e.RealmMultiplier <= 0 || e.AttackerRealm < 0 || e.AttackerRealm > (world.SchemaVersion >= 4 ? WorldFactory.MaximumRealm : 5) || e.DefenderRealm < 0 || e.DefenderRealm > (world.SchemaVersion >= 4 ? WorldFactory.MaximumRealm : 5)
                     || e.RelicName is null || e.RelicCategory is not ("" or "attack" or "protection") || e.RelicTier is < 0 or > 2 || !double.IsFinite(e.RelicBonus) || e.RelicBonus is < 0 or > .25 || (e.RelicName == "") != (e.RelicCategory == ""))) throw new GameRuleException("对局战报无效。");
         if (world.AgentStatus is null or { Length: > 600 }) throw new GameRuleException("宗门Agent状态提示无效。");
         if (world.AgentMemories.Select(m => m.SectId).Distinct().Count() != world.AgentMemories.Count) throw new GameRuleException("宗门Agent会话重复。");

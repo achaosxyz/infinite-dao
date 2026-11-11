@@ -141,8 +141,8 @@ public partial class GameClient
         var overview = Row(24); overview.AddChild(Portrait(portraits, leader.Portrait, 162, 246)); var bio = Stack(9);
         bio.AddChild(Emblem(sect, 42));
         bio.AddChild(Heading($"{leader.Name} · {leader.Role}", 24)); bio.AddChild(Text(sect.Motto, 18, Gold)); bio.AddChild(Text(sect.Personality, 14, Muted, true));
-        bio.AddChild(Text($"道藏 {sect.Doctrine} / 8   ·   军阵 {sect.Training} / 10   ·   情报 {sect.Intel} / 5\n声望 {sect.Renown} · 战疲 {sect.WarExhaustion}%（驻守每月恢复 4）", 14)); overview.AddChild(bio);
-        overview.AddChild(Metric("每月灵石净入", $"{GameEngine.Income(state, sect) - GameEngine.Upkeep(state, sect):+0;-0;0}", Gold)); overview.AddChild(Metric("每月灵材产出", "+" + GameEngine.HerbIncome(state, sect), Jade)); view.AddChild(Card(overview));
+        bio.AddChild(Text($"道藏 {sect.Doctrine} / 8   ·   军阵 {sect.Training} / 10   ·   情报 {sect.Intel} / 5\n声望 {sect.Renown} · 战疲 {sect.WarExhaustion}%（驻守每月恢复 4）\n飞升底蕴 {sect.Foundation} · 生产/修炼 +{GameEngine.FoundationMultiplier(sect) - 1:P0}", 14)); overview.AddChild(bio);
+        overview.AddChild(Metric("灵石常例结余", $"{GameEngine.Income(state, sect) - GameEngine.Upkeep(state, sect):+0;-0;0}", Gold)); overview.AddChild(Metric("灵材常例结余", $"{GameEngine.HerbIncome(state, sect) - GameEngine.HerbUpkeep(state, sect):+0;-0;0}", Jade)); view.AddChild(Card(overview));
         var policies = Row(8);
         for (var i = 0; i < WorldFactory.Policies.Length; i++)
         {
@@ -152,9 +152,9 @@ public partial class GameClient
         view.AddChild(policies);
         var guide = Stack(14); guide.AddChild(Heading("一纸宗策，静观百年", 26, Gold));
         guide.AddChild(Text("均衡发展：兼顾道藏、民生与防务。\n休养生息：优先坊市与储备，减少战争倾向。\n潜心修炼：优先道藏，长期培养高阶修士。\n开疆拓土：提高扩张倾向，但须先备足军需。\n远交近攻：经营关系与五年盟约，择机发展。", 16, Paper, true));
-        guide.AddChild(Text("门人按修龄自行破境，不能以数次演武跳过境界积累。战事由阵法、实际参战门人和跨境界压制决定，战力总和只供参考。", 14, Muted, true));
+        guide.AddChild(Text("先天特性决定成长上限与培养价值；常例结余未计修炼、采办、营建、军需和留世。高阶修士满修为仍须灵石/灵材供养。大乘满十年默认飞升留下底蕴，只有关键人物才值得申请巨额供给留世。战事由实际门人与跨境压制结算，战力总和只供参考。", 14, Muted, true));
         var target = state.Regions.FirstOrDefault(r => r.Id == sect.Target);
-        guide.AddChild(Text($"当前筹划：{target?.Name ?? "观察边境"}\n经营保留灵石 {GameEngine.ReservedStones(state, sect)} / 现有 {sect.Stones}；军需保留丹材 {GameEngine.ReservedHerbs(state, sect)} / 现有 {sect.Herbs}。采办与营建不会挪用战略现金；满修为等待稳固与返虚道成者不再消耗修炼丹材。", 14, Gold, true));
+        guide.AddChild(Text($"当前筹划：{target?.Name ?? "观察边境"}\n经营保留灵石 {GameEngine.ReservedStones(state, sect)} / 现有 {sect.Stones}；军需保留丹材 {GameEngine.ReservedHerbs(state, sect)} / 现有 {sect.Herbs}。采办与营建不会挪用战略现金；达到先天上限或修为满盈时停用修炼丹材，但各境日常供养持续支付。", 14, Gold, true));
         guide.AddChild(Button("安排重点培养与护道人   →", "strategy-people", () => { selectedPersonSect = state.PlayerId; Navigate("people"); }));
         view.AddChild(Card(guide)); return Scroll(view);
     }

@@ -52,6 +52,16 @@ public partial class GameClient
             Input.ParseInputEvent(new InputEventKey { Keycode = Key.Space, Pressed = true }); await Frames(2);
             Check(paused, "Space must pause time.");
             var month = world!.Month; await Frames(15); Check(world.Month == month, "Paused world must not tick."); checks.Add("new game, council choices, keyboard pause and inspect");
+            foreach (var destination in new[] { "sect", "people", "diplomacy", "treasury", "history" })
+            {
+                await ClickNativeButton("pause"); Check(!paused && page == "map", "Explicit resume must return to the map.");
+                await ClickNativeButton("nav-" + destination); await WaitForNativeAction("inspect-" + destination);
+                Check(paused && page == destination, "Every non-map page must pause immediately.");
+                var inspectionMonth = world!.Month;
+                await Frames(18); Check(world.Month == inspectionMonth, "An inspection page must not keep advancing.");
+                await ClickNativeButton("nav-map"); Check(paused, "Returning to the map must not resume without an explicit action.");
+            }
+            checks.Add("all non-map pages auto-pause, remain stable during inspection, and return without implicit resume");
             await Press("nav-map");
             await ClickRegion(0); Check(selectedRegion == "r01", "Map input must select the clicked region.");
             await ClickRegion(world.Regions.Single(r => r.Id == world.Player.Capital).Index);
@@ -111,6 +121,25 @@ public partial class GameClient
             await Press("guardian-" + disciple.Id); await Press("assign-guardian-" + guardian.Id);
             Check(world!.People.Single(p => p.Id == disciple.Id).GuardianId == guardian.Id, "Guardian selection must persist.");
             Screenshot("people"); checks.Add("native disciple focus and higher-realm guardian assignment");
+            var beforeAscensionView = world.Copy();
+            var ascensionFixture = world.Copy();
+            var ascendant = ascensionFixture.People.Single(p => p.Id == disciple.Id);
+            ascendant.Realm = WorldFactory.MaximumRealm; ascendant.InnateTrait = 4; ascendant.RealmMonths = 108;
+            ascendant.AgeMonths = 40 * 12; ascendant.Progress = 120; ascendant.GuardianId = null;
+            await SetVerificationWorld(ascensionFixture); page = "people"; paused = true; Render();
+            var ascensionWindowSize = GetWindow().Size; GetWindow().Size = new Vector2I(1100, 700); await Frames(6);
+            await ClickNativeButton("person-" + disciple.Id);
+            var ascensionScroll = FindControl<ScrollContainer>(c => c.Name == "person-profile-scroll" && c.IsVisibleInTree());
+            ascensionScroll.ScrollVertical = (int)ascensionScroll.GetVScrollBar().MaxValue; await Frames(4);
+            Screenshot("retention-small"); await ClickNativeButton("retention-" + disciple.Id);
+            Check(paused && world!.People.Single(p => p.Id == disciple.Id).RetainInWorld && world.People.Single(p => p.Id == disciple.Id).AscensionWarned, "Real mouse retention must persist the informed choice while staying paused.");
+            await ClickNativeButton("person-" + disciple.Id);
+            ascensionScroll = FindControl<ScrollContainer>(c => c.Name == "person-profile-scroll" && c.IsVisibleInTree());
+            ascensionScroll.ScrollVertical = (int)ascensionScroll.GetVScrollBar().MaxValue; await Frames(4);
+            await ClickNativeButton("retention-" + disciple.Id);
+            Check(!world!.People.Single(p => p.Id == disciple.Id).RetainInWorld, "A second real mouse action must cancel retention.");
+            GetWindow().Size = ascensionWindowSize; await Frames(6); await SetVerificationWorld(beforeAscensionView);
+            checks.Add("small-window real mouse retention and cancellation, informed choice persistence, and paused character operations");
             var beforeRelicView = world.Copy();
             var relicFixture = world.Copy();
             var relic = new Relic { Id = relicFixture.NewId(), Scope = "personal", TemplateId = "attack_1_1", Name = "听雨剑", Owner = relicFixture.PlayerId, RegionId = relicFixture.Player.Capital, FoundMonth = relicFixture.Month };
@@ -257,15 +286,16 @@ public partial class GameClient
             object? liveModel = null;
             if (OS.GetCmdlineUserArgs().Contains("--verify-model"))
             {
-                CloseOverlay(); Run(() => session.NewGame("qingyun", 8192, "llm", "normal", lifetime.Token), "真实模型开宗议事验证");
-                await WaitForNativeAction("live-council");
+                CloseOverlay(); Run(() => session.NewGame("qingyun", 8192, "llm", "normal", lifetime.Token), "真实模型策略验证");
+                await WaitForNativeAction("live-strategy");
+                var ruleCouncil = JsonSerializer.Serialize(world!.PendingEvent);
                 var deadline = Time.GetTicksMsec() + 600_000;
-                while ((world!.PendingEvent?.NarrativeSource != "llm" || world.AgentMemories.Count != world.Sects.Count - 1 || session.HasBackgroundWork) && Time.GetTicksMsec() < deadline)
+                while ((world!.AgentMemories.Count != world.Sects.Count - 1 || session.HasBackgroundWork) && Time.GetTicksMsec() < deadline)
                 {
                     Check(world.Mode == "llm", "Real provider verification switched offline: " + world.AgentStatus);
                     await Frames(1);
                 }
-                Check(world!.PendingEvent?.NarrativeSource == "llm", "Live council must be narrated by the model.");
+                Check(JsonSerializer.Serialize(world!.PendingEvent) == ruleCouncil, "Live strategy agents must leave the rule-defined council unchanged.");
                 await Press("choose-expansion"); Advance(); await WaitForNativeAction("live-month");
                 Check(world!.Month == 1 && world.Decisions.Count(d => d.Source == "llm") == world.Sects.Count - 1, "Native LLM advance must produce a valid decision for every rival.");
                 Check(world.AgentMemories.Count == world.Sects.Count - 1 && world.AgentMemories.All(m => m.Plan is not null && m.Conversation.Count == 2), "Each rival must persist a public conversation and accepted plan.");

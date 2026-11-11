@@ -10,13 +10,13 @@ public static partial class GameEngine
 
     private static double CultivatorHealth(Cultivator person) => 100 * Math.Pow(2, person.Realm) * (1 - person.Injury / 140d);
     private static double CultivatorDamage(GameState world, Cultivator person, int targetRealm) =>
-        22 * Math.Pow(2, person.Realm) * (.8 + person.Potential / 200d) * RealmDamageMultiplier(person.Realm, targetRealm)
+        22 * Math.Pow(2, person.Realm) * (.8 + person.Potential / 200d) * WorldFactory.InnateCombatMultipliers[person.InnateTrait] * RealmDamageMultiplier(person.Realm, targetRealm)
         * (ActiveRelicTemplate(world, person) is { Category: "attack" } template ? 1 + template.Bonus : 1);
     private static double SectBattleBonus(GameState world, Sect sect) => (1 + sect.Training * .09) * TraitCombatMultiplier(sect)
         * (.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004)
         * (1 + Math.Min(.25, world.Relics.Where(r => r.Scope == "sect" && r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power) / 600d));
     private static double DefenseFormation(GameState world, Sect? defender, Region region, double defenseBonus) =>
-        (1 + region.Fort * .12) * defenseBonus
+        (1 + region.Fort * .08) * defenseBonus
         * (defender?.Id == world.PlayerId ? world.Difficulty == "story" ? 1.2 : world.Difficulty == "hard" ? .95 : 1.05 : 1);
 
     private static List<Cultivator> GarrisonMembers(GameState world, Sect? defender, Region region) => defender is null
@@ -115,7 +115,7 @@ public static partial class GameEngine
                 var fraction = 1 - c.Health / Math.Max(1, c.Maximum);
                 if (!c.Standing && deaths < safe && world.Random() < (lost ? .42 : .18) * (tactic == "fierce" ? 1.4 : tactic == "careful" ? .55 : 1))
                 {
-                    c.Person.Alive = false; deaths++;
+                    c.Person.Alive = false; c.Person.RetainInWorld = false; deaths++;
                     c.Person.Biography += $" 青岚历{world.Month / 12 + 1}年于{region.Name}战役陨落。";
                     var killer = exchanges.Values.Where(e => e.DefenderId == c.Person.Id).OrderByDescending(e => e.Damage).FirstOrDefault();
                     var victor = world.People.SingleOrDefault(p => p.Id == killer?.AttackerId);

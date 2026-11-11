@@ -249,7 +249,7 @@ public sealed class CultivatorCombatRegressionTests
         {
             var person = people[i];
             person.Alive = i < count;
-            person.Realm = realm; person.Potential = 55; person.Injury = 0;
+            person.Realm = realm; person.Potential = 55; person.Injury = 0; person.InnateTrait = 0;
             person.Progress = 0; person.RealmMonths = 0; person.AgeMonths = 240;
         }
         sect.LeaderId = people[0].Id;

@@ -4,7 +4,16 @@ public static partial class GameEngine
 {
     private static GameEvent GenerateEvent(GameState world)
     {
-        var type = world.Roll(0, 11);
+        var sect = world.Player;
+        var members = Members(world, sect);
+        var scenarios = Enumerable.Range(0, 12).Where(n => n switch
+        {
+            2 => sect.Training < 10 || sect.Stability < 100 || members.Any(p => p.Loyalty < 100),
+            6 => sect.Doctrine < 8 || members.Any(p => p.Potential < 100 || p.Progress < 120),
+            11 => sect.Stability < 100 || members.Any(p => p.Loyalty < 100),
+            _ => true
+        }).ToArray();
+        var type = scenarios[world.Roll(0, scenarios.Length - 1)];
         var e = new GameEvent { Id = world.NewId(), Type = "council" + type };
         (string Title, string Text, List<EventChoice> Choices) definition = type switch
         {
@@ -22,6 +31,27 @@ public static partial class GameEngine
             _ => ("岁时祭祖", "山门悬灯，弟子请掌门主持祭祖。有人怀念战死的同门，也有人在灯下写下自己的长生愿。", [C("ceremony", "为先辈立碑", "安定 +15，全体忠诚 +10。", 100), C("reward", "犒赏全宗", "安定 +10，威望 +8。", 60, 20), C("simple", "清茶一盏，铭记初心", "安定 +4。")])
         };
         e.Title = definition.Title; e.Text = definition.Text; e.Choices = definition.Choices;
+        e.Choices.RemoveAll(c => (c.Id is "study" or "research") && sect.Doctrine >= 8 || c.Id == "discipline" && sect.Training >= 10);
+        e.ResourceScale = Math.Max(1, (Income(world, world.Player) + HerbIncome(world, world.Player) * 2) / 100);
+        foreach (var choice in e.Choices)
+        {
+            choice.Stones *= e.ResourceScale; choice.Herbs *= e.ResourceScale;
+            choice.Description = (type, choice.Id) switch
+            {
+                (0, "accept") => "新增一名天灵根（或更高）高资质筑基亲传，威望 +8。",
+                (1, "mine") => $"灵石净收益 +{230 * e.ResourceScale}，首府发展 +1（上限5）。",
+                (1, "preserve") => $"灵材 +{90 * e.ResourceScale}，全体修为 +8。",
+                (3, "sell") => $"灵石 +{250 * e.ResourceScale}。",
+                (4, "cleanse") => $"安定 +10，灵材 +{100 * e.ResourceScale}（另扣所需费用）。",
+                (4, "burn") => $"灵材 -{30 * e.ResourceScale}，避免扩大。",
+                (4, "risk") => $"灵材 -{80 * e.ResourceScale}，安定 -8。",
+                (5, "intel") => $"情报 +1，灵材 +{30 * e.ResourceScale}。",
+                (8, "herbs") => $"灵材 +{120 * e.ResourceScale}。",
+                (9, "release") => $"安定 -5，灵材 +{20 * e.ResourceScale}。",
+                (10, "trade") => $"灵石 +{240 * e.ResourceScale}。",
+                _ => choice.Description
+            };
+        }
         return e;
     }
 
@@ -71,39 +101,46 @@ public static partial class GameEngine
             if (choiceId == "wander") { sect.Stones += 300; sect.Herbs += 100; }
             if (choiceId == "revenge") { sect.Training = Math.Min(10, sect.Training + 1); Boost(world, sect, 35); }
         }
-        else if (e.Type.StartsWith("council", StringComparison.Ordinal)) ApplyCouncil(world, sect, e.Type, choiceId);
+        else if (e.Type == "ascension")
+        {
+            var person = Members(world, sect).SingleOrDefault(p => p.Id.ToString() == e.Target && p.Realm == WorldFactory.MaximumRealm)
+                ?? throw new GameRuleException("飞升议事人物已无效。");
+            if (choiceId is not ("ascend" or "retain")) throw new GameRuleException("飞升议事选项无效。");
+            person.RetainInWorld = choiceId == "retain"; person.AscensionWarned = true;
+        }
+        else if (e.Type.StartsWith("council", StringComparison.Ordinal)) ApplyCouncil(world, sect, e.Type, choiceId, e.ResourceScale);
         Log(world, "decision", e.Title, $"掌门选择「{choice.Label}」。{choice.Description}", [sect.Id], $"支付灵石 {choice.Stones}、灵材 {choice.Herbs}");
         sect.Stability = Math.Clamp(sect.Stability, 0, 100); sect.Herbs = Math.Max(0, sect.Herbs);
     }
 
-    private static void ApplyCouncil(GameState w, Sect s, string type, string c)
+    private static void ApplyCouncil(GameState w, Sect s, string type, string c, int scale)
     {
         var capital = Lands(w, s).FirstOrDefault(r => r.Id == s.Capital) ?? Lands(w, s).FirstOrDefault();
         switch (type)
         {
             case "council0":
-                if (c == "accept") { var p = WorldFactory.NewCultivator(w, s.Id); p.Potential = 96; p.Realm = 1; p.Role = "亲传"; if (capital is not null) capital.Population--; s.Renown += 8; }
+                if (c == "accept") { var p = WorldFactory.NewCultivator(w, s.Id); p.Potential = 96; p.Realm = 1; p.Role = "亲传"; p.InnateTrait = Math.Max(3, p.InnateTrait); if (capital is not null) capital.Population--; s.Renown += 8; }
                 else if (c == "gift") { s.Stability += 8; s.Renown += 4; } else s.Stability -= 3;
                 break;
             case "council1":
-                if (c == "mine") { s.Stones += 350; if (capital is not null) capital.Development = Math.Min(5, capital.Development + 1); }
-                else if (c == "preserve") { s.Herbs += 90; Boost(w, s, 8); } else s.Doctrine = Math.Min(8, s.Doctrine + 1);
+                if (c == "mine") { s.Stones += 350 * scale; if (capital is not null) capital.Development = Math.Min(5, capital.Development + 1); }
+                else if (c == "preserve") { s.Herbs += 90 * scale; Boost(w, s, 8); } else s.Doctrine = Math.Min(8, s.Doctrine + 1);
                 break;
             case "council2":
                 if (c == "equal") s.Stability += 18; else if (c == "discipline") { s.Stability += 6; s.Training = Math.Min(10, s.Training + 1); } else s.Stability -= 16;
                 break;
             case "council3":
-                if (c == "research") { s.Doctrine = Math.Min(8, s.Doctrine + 1); s.Renown += 8; } else if (c == "sell") s.Stones += 250; else Boost(w, s, 20);
+                if (c == "research") { s.Doctrine = Math.Min(8, s.Doctrine + 1); s.Renown += 8; } else if (c == "sell") s.Stones += 250 * scale; else Boost(w, s, 20);
                 break;
             case "council4":
-                if (c == "cleanse") { s.Stability += 10; s.Herbs += 100; } else if (c == "burn") s.Herbs -= 30; else { s.Herbs -= 80; s.Stability -= 8; }
+                if (c == "cleanse") { s.Stability += 10; s.Herbs += 100 * scale; } else if (c == "burn") s.Herbs -= 30 * scale; else { s.Herbs -= 80 * scale; s.Stability -= 8; }
                 break;
             case "council5":
                 if (c == "peace" || c == "reject") { foreach (var other in w.Sects.Where(x => !x.Eliminated && x.Id != s.Id)) ChangeRelation(s, other, c == "peace" ? 12 : -8); if (c == "reject") s.Renown += 5; }
-                else { s.Intel = Math.Min(5, s.Intel + 1); s.Herbs += 30; }
+                else { s.Intel = Math.Min(5, s.Intel + 1); s.Herbs += 30 * scale; }
                 break;
             case "council6":
-                if (c == "support") { var p = Members(w, s).OrderByDescending(x => x.Potential).First(); p.Potential = Math.Min(100, p.Potential + 15); p.Progress = Math.Min(120, p.Progress + 45); s.Doctrine = Math.Min(8, s.Doctrine + 1); }
+                if (c == "support") { var p = Members(w, s).OrderByDescending(x => x.Potential < 100).ThenByDescending(x => x.Focused).ThenByDescending(x => x.InnateTrait).ThenByDescending(x => x.Potential).First(); p.Potential = Math.Min(100, p.Potential + 15); p.Progress = Math.Min(120, p.Progress + 45); s.Doctrine = Math.Min(8, s.Doctrine + 1); }
                 else if (c == "steady") Boost(w, s, 15); else { s.Stability += 4; var p = Members(w, s).Last(); p.Loyalty = Math.Max(0, p.Loyalty - 20); }
                 break;
             case "council7":
@@ -112,14 +149,14 @@ public static partial class GameEngine
                 break;
             case "council8":
                 if (c == "buy") { var p = w.Roll(25, 55); var id = Log(w, "relic", "古匣开封", "一枚「归墟道印」认宗而归。", [s.Id], $"战力 +{p}"); w.Relics.Add(new Relic { Id = w.NewId(), Owner = s.Id, Name = "归墟道印", Power = p, Effect = "气运镇宗，提升全宗战力", OriginEvent = id, FoundMonth = w.Month }); }
-                else if (c == "herbs") s.Herbs += 120;
+                else if (c == "herbs") s.Herbs += 120 * scale;
                 break;
             case "council9":
                 if (c == "keep") { foreach (var p in Members(w, s)) p.Injury = Math.Max(0, p.Injury - 25); s.Stability += 10; }
-                else if (c == "teach") { Boost(w, s, 25); s.Renown += 5; } else { s.Stability -= 5; s.Herbs += 20; }
+                else if (c == "teach") { Boost(w, s, 25); s.Renown += 5; } else { s.Stability -= 5; s.Herbs += 20 * scale; }
                 break;
             case "council10":
-                if (c == "attend") { s.Renown += 20; Boost(w, s, 12); } else if (c == "trade") s.Stones += 240; else Boost(w, s, 10);
+                if (c == "attend") { s.Renown += 20; Boost(w, s, 12); } else if (c == "trade") s.Stones += 240 * scale; else Boost(w, s, 10);
                 break;
             case "council11":
                 if (c == "ceremony") { s.Stability += 15; foreach (var p in Members(w, s)) p.Loyalty = Math.Min(100, p.Loyalty + 10); }

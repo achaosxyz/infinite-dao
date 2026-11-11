@@ -10,7 +10,7 @@ public static partial class GameEngine
         Choices = defend ?
         [
             new() { Id = "balanced", Label = "结阵固守", Description = "依托护山阵迎战，常规伤亡，保留反击机会。" },
-            new() { Id = "sacrifice", Label = "燃灵护山", Description = "额外消耗 150 灵石与 40 灵材，防守战力提高 45%。", Stones = 150, Herbs = 40 },
+            new() { Id = "sacrifice", Label = "燃灵护山", Description = $"额外消耗 {Math.Max(150, Upkeep(world, world.Player) * 6)} 灵石与 {Math.Max(40, HerbUpkeep(world, world.Player) * 6 + HerbIncome(world, world.Player) * 2)} 灵材，防守战力提高45%；按本宗供养规模筹阵。", Stones = Math.Max(150, Upkeep(world, world.Player) * 6), Herbs = Math.Max(40, HerbUpkeep(world, world.Player) * 6 + HerbIncome(world, world.Player) * 2) },
             new() { Id = "retreat", Label = "撤离此地", Description = "放弃领地，保存弟子；若是最后山门，将护送道统流亡。" }
         ] :
         [
@@ -84,7 +84,7 @@ public static partial class GameEngine
         {
             if (world.Random() < rate && count < maxDeaths)
             {
-                person.Alive = false; count++;
+                person.Alive = false; person.RetainInWorld = false; count++;
                 person.Biography = $"青岚历 {world.Month / 12 + 1} 年，于宗门征战中陨落。";
             }
             else person.Injury = Math.Min(90, person.Injury + (int)(rate * 110) + world.Roll(3, 12));

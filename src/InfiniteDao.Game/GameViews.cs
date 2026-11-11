@@ -137,7 +137,7 @@ public partial class GameClient
         speed.Select(Array.IndexOf(new[] { 1d, .25d, .05d }, secondsPerMonth)); speed.ItemSelected += i => secondsPerMonth = new[] { 1d, .25d, .05d }[i]; footer.AddChild(speed);
         var advance = Button("推演一载  →", "advance", AdvanceYear, busy || state.Status != "playing" || state.PendingEvent is not null || sect.Exiled);
         advance.AddThemeFontOverride("font", Display); advance.AddThemeFontSizeOverride("font_size", 17); footer.AddChild(advance);
-        var pause = Button(busy ? "月末暂停  Ⅱ" : paused ? "▷ 继续演进" : "Ⅱ 暂停演进", "pause", TogglePause, state.Status != "playing" || (!busy && paused && (state.PendingEvent is not null || sect.Exiled)), true);
+        var pause = Button(busy ? "月末暂停  Ⅱ" : paused ? page == "map" ? "▷ 继续演进" : "▷ 回地图演进" : "Ⅱ 暂停演进", "pause", TogglePause, state.Status != "playing" || (!busy && paused && (state.PendingEvent is not null || sect.Exiled)), true);
         pause.AddThemeFontOverride("font", Display); pause.AddThemeFontSizeOverride("font_size", 17); footer.AddChild(pause);
         var footerPlate = Card(footer, padding: 10); footerPlate.SetMeta("hud_footer", true); footerPlate.AddThemeStyleboxOverride("panel", Frame("hud-header", 10, 40)); shell.AddChild(footerPlate); return shell;
     }

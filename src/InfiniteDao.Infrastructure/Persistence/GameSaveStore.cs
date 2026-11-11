@@ -59,18 +59,6 @@ public sealed class GameSaveStore(string directory)
                 || state.Sects.Any(s => !WorldFactory.Policies.Contains(s.Policy)))
                 throw new GameRuleException("存档包含无效的地图或人物标记。");
             if (state.Mode is not ("llm" or "rules") || state.Status is not ("playing" or "victory") || state.Difficulty is not ("normal" or "story" or "hard") || state.CommandsLeft is < 0 or > 2 || state.NextId <= state.History.Select(e => e.Id).Concat(state.People.Select(p => p.Id)).DefaultIfEmpty(0).Max()) throw new GameRuleException("存档元数据无效。");
-            if (state.SchemaVersion == 1)
-            {
-                // Upgrade appearance only; never advance rule RNG or rewrite the old world's factions and land.
-                foreach (var person in state.People)
-                    person.Portrait = (int)((unchecked((uint)person.Id * 2654435761u) ^ unchecked((uint)state.Seed)) % WorldFactory.PortraitCount);
-                state.SchemaVersion = 2;
-            }
-            if (state.SchemaVersion == 2)
-            {
-                state.SchemaVersion = 3;
-                GameEngine.Validate(state);
-            }
             return state;
         }
         catch (Exception error) when (error is JsonException or NullReferenceException or InvalidOperationException or ArgumentException)

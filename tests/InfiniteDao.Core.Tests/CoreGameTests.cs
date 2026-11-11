@@ -30,7 +30,7 @@ public sealed class CoreGameTests
         }).ToList();
 
     private static int CultivationHerbUpkeep(GameState world, Sect sect) => GameEngine.Members(world, sect)
-        .Where(person => person.Realm < 5 && person.Progress < 120)
+        .Where(person => GameEngine.CanAdvanceRealm(person) && person.Progress < 120)
         .Sum(person => 1 + person.Realm + (person.Focused ? 3 + person.Realm * 2 : 0));
 
     private static SectAgentPlan ValidAgentPlan(string target = "") => new()
@@ -260,15 +260,15 @@ public sealed class CoreGameTests
         target.Fort = 3;
         target.Owner = "";
         target.Terrain = "平原";
-        Assert.AreEqual(12 + target.Fort * 2, GameEngine.MinimumBattleMonths(world, target));
+        Assert.AreEqual(2 + target.Fort, GameEngine.MinimumBattleMonths(world, target));
         target.Terrain = "关隘";
-        Assert.AreEqual(12 + target.Fort * 2 + 6, GameEngine.MinimumBattleMonths(world, target));
+        Assert.AreEqual(2 + target.Fort + 2, GameEngine.MinimumBattleMonths(world, target));
 
         target.Owner = "chixia";
         target.Terrain = "平原";
-        Assert.AreEqual(36 + target.Fort * 9, GameEngine.MinimumBattleMonths(world, target));
+        Assert.AreEqual(6 + target.Fort * 2, GameEngine.MinimumBattleMonths(world, target));
         target.Terrain = "雪原";
-        Assert.AreEqual(36 + target.Fort * 9 + 6, GameEngine.MinimumBattleMonths(world, target));
+        Assert.AreEqual(6 + target.Fort * 2 + 2, GameEngine.MinimumBattleMonths(world, target));
     }
 
     [TestMethod]
@@ -417,6 +417,8 @@ public sealed class CoreGameTests
             person.Realm = 0;
             person.RealmMonths = 0;
             person.Potential = 80;
+            person.AgeMonths = 20 * 12;
+            person.InnateTrait = 0;
             person.Injury = 0;
             person.NextJourneyMonth = person.Id == focused.Id || person.Id == ordinary.Id || person.Role == "掌门" ? 10000 : 1;
         }
@@ -462,18 +464,21 @@ public sealed class CoreGameTests
         }
         var cultivator = members[0];
         cultivator.Realm = 0;
+        cultivator.AgeMonths = 20 * 12;
         cultivator.Progress = 0;
 
         var income = GameEngine.Income(world, player);
         var upkeep = GameEngine.Upkeep(world, player);
         var herbIncome = GameEngine.HerbIncome(world, player);
         player.Stones = 100000;
-        player.Herbs = 220 - herbIncome;
+        var maintenance = GameEngine.HerbUpkeep(world, player);
+        var desired = (maintenance + 1) * 6 + GameEngine.ReservedHerbs(world, player) + 120;
+        player.Herbs = desired - 6 - herbIncome;
         var startingHerbs = player.Herbs;
 
         GameEngine.AdvanceMonth(world, QuietDecisions(world));
 
-        Assert.AreEqual(225, player.Herbs, "坊市只补足一名真实修炼者的六份储备需求，扣除本月一份修炼丹材");
+        Assert.AreEqual(desired - maintenance - 1, player.Herbs, "采办同时保障高阶日常供养与一名实际修炼者；本月分别扣除");
         Assert.AreEqual(24, 100000 + income - upkeep - player.Stones, "实际购材应按每份丹材四枚灵石结算");
         Assert.IsGreaterThanOrEqualTo(GameEngine.ReservedStones(world, player), player.Stones,
             "采办不得侵占灵石储备");
@@ -510,7 +515,7 @@ public sealed class CoreGameTests
         GameEngine.AdvanceMonth(world, QuietDecisions(world));
 
         Assert.AreEqual(reserve, player.Stones, "只达到远征全程军需储备时，执事不得用灵石购材");
-        Assert.AreEqual(herbIncome, player.Herbs, "军需储备不足以购材时，不得凭空补充灵材");
+        Assert.AreEqual(Math.Max(0, herbIncome - GameEngine.HerbUpkeep(world, player)), player.Herbs, "军需储备不足以购材时，仍支付实际能负担的日常供养，不凭空补材");
         Assert.AreEqual(reserve, GameEngine.ReservedStones(world, player));
         GameEngine.Validate(world);
     }
@@ -526,9 +531,9 @@ public sealed class CoreGameTests
     [DataRow("develop", 180, 0)]
     [DataRow("fortify", 160, 15)]
     [DataRow("recruit", 140, 0)]
-    [DataRow("train", 220, 30)]
-    [DataRow("research", 300, 60)]
-    [DataRow("breakthrough", 100, 45)]
+    [DataRow("train", 200, 20)]
+    [DataRow("research", 480, 60)]
+    [DataRow("breakthrough", 120, 50)]
     [DataRow("heal", 50, 50)]
     [DataRow("scout", 70, 0)]
     [DataRow("gift", 120, 0)]
@@ -639,7 +644,7 @@ public sealed class CoreGameTests
         {
             person.Realm = 0;
             person.Potential = 0;
-            person.AgeMonths = 40 * 12;
+            person.AgeMonths = 20 * 12;
         }
         world.RandomState = 12345;
         player.Stones = 50_000;
@@ -676,7 +681,7 @@ public sealed class CoreGameTests
         {
             var expectedStones = player.Stones + GameEngine.Income(world, player) - GameEngine.Upkeep(world, player) - campaign.MonthlyStones;
             var herbUpkeep = CultivationHerbUpkeep(world, player);
-            var expectedHerbs = player.Herbs + GameEngine.HerbIncome(world, player) - herbUpkeep - campaign.MonthlyHerbs;
+            var expectedHerbs = player.Herbs + GameEngine.HerbIncome(world, player) - GameEngine.HerbUpkeep(world, player) - herbUpkeep - campaign.MonthlyHerbs;
             var remaining = campaign.MonthsRemaining;
             GameEngine.AdvanceMonth(world, QuietDecisions(world));
             Assert.AreEqual(expectedStones, player.Stones, "逐月扣除远征灵石补给");
@@ -737,7 +742,7 @@ public sealed class CoreGameTests
             sect => new
             {
                 Stones = sect.Stones + GameEngine.Income(world, sect) - GameEngine.Upkeep(world, sect),
-                Herbs = sect.Herbs + GameEngine.HerbIncome(world, sect) - CultivationHerbUpkeep(world, sect),
+                Herbs = sect.Herbs + GameEngine.HerbIncome(world, sect) - GameEngine.HerbUpkeep(world, sect) - CultivationHerbUpkeep(world, sect),
                 Ages = GameEngine.Members(world, sect).ToDictionary(person => person.Id, person => person.AgeMonths)
             });
 
@@ -840,16 +845,18 @@ public sealed class CoreGameTests
         player.Herbs = 10000;
         player.Doctrine = 8;
         player.Policy = "cultivation";
-        CollectionAssert.AreEqual(new[] { 18, 60, 180, 600, 1800, 0 }, WorldFactory.MinimumRealmMonths);
+        CollectionAssert.AreEqual(new[] { 6, 12, 24, 36, 48, 60, 72, 0 }, WorldFactory.MinimumRealmMonths);
         var candidate = GameEngine.Members(world, player)[0];
         candidate.Realm = 0;
+        candidate.AgeMonths = 20 * 12;
+        candidate.InnateTrait = 4;
         candidate.Injury = 0;
         candidate.Progress = 120;
         candidate.RealmMonths = 0;
 
         var tooYoung = Assert.Throws<GameRuleException>(() =>
             GameEngine.Command(world, new GameCommand("breakthrough", candidate.Id.ToString())));
-        StringAssert.Contains(tooYoung.Message, "修龄");
+        StringAssert.Contains(tooYoung.Message, "境龄");
 
         foreach (var person in GameEngine.Members(world, player)) person.Progress = 0;
         candidate.Progress = 109;
@@ -861,14 +868,14 @@ public sealed class CoreGameTests
         var stones = player.Stones;
         var herbs = player.Herbs;
         GameEngine.Command(world, new GameCommand("breakthrough", candidate.Id.ToString()));
-        Assert.AreEqual(stones - 100, player.Stones);
-        Assert.AreEqual(herbs - 45, player.Herbs);
+        Assert.AreEqual(stones - 120, player.Stones);
+        Assert.AreEqual(herbs - 50, player.Herbs);
         Assert.AreEqual(10, candidate.Progress);
         Assert.AreEqual("cultivation", world.History.Last().Kind);
     }
 
     [TestMethod]
-    public void MaxRealmAtMaxProgressDoesNotConsumeHerbsForFurtherCultivation()
+    public void MaxRealmStillPaysMaintenanceWithoutFurtherCultivation()
     {
         var world = CreateWorld(60);
         FinishInauguration(world);
@@ -876,18 +883,22 @@ public sealed class CoreGameTests
         var player = world.Player;
         foreach (var person in GameEngine.Members(world, player))
         {
-            person.Realm = 5;
+            person.Realm = WorldFactory.MaximumRealm;
+            person.RealmMonths = 0;
+            person.InnateTrait = 4;
             person.Progress = 120;
             person.AgeMonths = 40 * 12;
         }
         GameEngine.Members(world, player)[0].Focused = true;
-        player.Herbs = 0;
+        player.Stones = 100000;
+        player.Herbs = 20000;
         var herbIncome = GameEngine.HerbIncome(world, player);
+        var maintenance = GameEngine.HerbUpkeep(world, player);
 
         Assert.AreEqual(0, CultivationHerbUpkeep(world, player));
         GameEngine.AdvanceMonth(world, QuietDecisions(world));
 
-        Assert.AreEqual(herbIncome, player.Herbs, "返虚顶阶且修为已满者不应继续消耗日常修炼或重点培养丹材");
+        Assert.AreEqual(20000 + herbIncome - maintenance, player.Herbs, "大乘修为满盈仍持续支付日常供养，但不继续支付修炼或重点培养丹材");
         Assert.IsTrue(GameEngine.Members(world, player).All(person => person.Progress == 120));
         GameEngine.Validate(world);
     }

@@ -54,7 +54,7 @@ public sealed class AutomaticAgentTests
     }
 
     [TestMethod]
-    public async Task CompletedCouncilNarrationChangesPresentationButPreservesChoiceRules()
+    public async Task PendingCouncilStaysRuleDefinedWhileSectAgentsPlan()
     {
         var root = NewDirectory();
         var handler = new FlowHandler();
@@ -64,32 +64,16 @@ public sealed class AutomaticAgentTests
         {
             await ConfigureAsync(root);
             await session.NewGame("qingyun", 419, "llm", "normal", CancellationToken.None);
-            var original = session.State!.PendingEvent!;
-            var originalId = original.Id;
-            var originalTitle = original.Title;
-            var originalText = original.Text;
-            var choices = original.Choices.ToDictionary(c => c.Id, c => new
-            {
-                c.Label, c.Description, c.Stones, c.Herbs, c.Flavor
-            });
+            var original = JsonSerializer.Serialize(session.State!.PendingEvent);
+            var revision = session.State.Revision;
+            await PumpUntilAsync(session, () => !session.HasBackgroundWork, TimeSpan.FromSeconds(10));
 
-            await PumpUntilAsync(session, () => session.State!.PendingEvent?.NarrativeSource == "llm", TimeSpan.FromSeconds(8));
-
-            var narrated = session.State!.PendingEvent!;
-            Assert.AreEqual(originalId, narrated.Id);
-            Assert.AreEqual("llm", narrated.NarrativeSource);
-            Assert.AreNotEqual(originalTitle, narrated.Title);
-            Assert.AreNotEqual(originalText, narrated.Text);
-            Assert.HasCount(choices.Count, narrated.Choices);
-            foreach (var choice in narrated.Choices)
-            {
-                var expected = choices[choice.Id];
-                Assert.AreEqual(expected.Label, choice.Label);
-                Assert.AreEqual(expected.Description, choice.Description);
-                Assert.AreEqual(expected.Stones, choice.Stones);
-                Assert.AreEqual(expected.Herbs, choice.Herbs);
-                Assert.AreNotEqual(expected.Flavor, choice.Flavor);
-            }
+            Assert.AreEqual(0, handler.CouncilCalls, "议事不得发起纯叙事模型请求。");
+            Assert.IsGreaterThan(0, handler.Calls, "敌宗策略 Agent 仍需正常工作。");
+            Assert.HasCount(session.State!.Sects.Count - 1, session.State.AgentMemories);
+            Assert.IsTrue(session.State.AgentMemories.All(m => m.Plan is not null));
+            Assert.AreEqual(original, JsonSerializer.Serialize(session.State.PendingEvent), "后台规划不得改写议事正文、选项、成本或效果。");
+            Assert.AreEqual(revision, session.State.Revision);
         }
         finally
         {
@@ -101,38 +85,48 @@ public sealed class AutomaticAgentTests
     }
 
     [TestMethod]
-    public async Task LateCouncilNarrationAfterPlayerChoiceIsIgnored()
+    [DataRow("rules")]
+    [DataRow("llm")]
+    public async Task PendingCouncilAloneDoesNotMakeAnyModelRequest(string narrativeSource)
     {
         var root = NewDirectory();
-        var handler = new FlowHandler(blockCouncilResponse: true, ignoreCancellationForBlockedCouncil: true);
+        var handler = new FlowHandler();
         using var client = new HttpClient(handler);
         var session = new GameSession(root, client);
         try
         {
             await ConfigureAsync(root);
-            await session.NewGame("qingyun", 527, "llm", "normal", CancellationToken.None);
-            await handler.BlockedCouncil.WaitAsync(TimeSpan.FromSeconds(5));
+            var world = WorldFactory.Create("qingyun", 527, "llm", "normal", compact: true);
+            world.PendingEvent!.NarrativeSource = narrativeSource;
+            if (narrativeSource == "llm")
+            {
+                world.PendingEvent.Text = "旧档已生成的议事场景。";
+                world.PendingEvent.Choices[0].Flavor = "旧档保留的选项说明。";
+            }
+            var originalCouncil = JsonSerializer.Serialize(world.PendingEvent);
+            foreach (var sect in world.Sects.Where(s => s.Id != world.PlayerId))
+            { sect.Eliminated = true; sect.Capital = ""; }
+            foreach (var region in world.Regions.Where(r => r.Owner != world.PlayerId)) region.Owner = "";
+            foreach (var person in world.People.Where(p => p.SectId != world.PlayerId)) person.Alive = false;
+            await session.Commit(world);
+            await session.Commit(await session.Saves.LoadAsync("auto"));
+            for (var i = 0; i < 3; i++) await PumpAsync(session);
+            Assert.IsFalse(session.HasBackgroundWork);
+            Assert.AreEqual(0, handler.Calls, "仅有待决议事不能产生模型调用。");
+            Assert.AreEqual(0, session.State!.ModelRequests);
+            Assert.AreEqual(0, session.State.ModelContextChecks);
+            Assert.AreEqual(originalCouncil, JsonSerializer.Serialize(session.State.PendingEvent), "载入后保留既有文案，不为其重新调用模型。");
             var initialState = session.State!;
             var peopleBefore = initialState.People.Count;
             var trainingBefore = initialState.Player.Training;
 
             await session.Execute(initialState.Revision, new GameCommand("choose", Option: "expansion"), CancellationToken.None);
-            var selectedRevision = session.State!.Revision;
-            Assert.IsNull(session.State.PendingEvent);
-            Assert.HasCount(peopleBefore + 3, session.State.People);
-            Assert.AreEqual(trainingBefore + 1, session.State.Player.Training);
-
-            handler.ReleaseBlockedResponses();
-            await handler.LateCouncilResponse.WaitAsync(TimeSpan.FromSeconds(5));
-            await PumpUntilAsync(session, () => !session.HasBackgroundWork, TimeSpan.FromSeconds(10));
-
-            Assert.IsNull(session.State!.PendingEvent, "迟到的主持结果不能重新打开已处理议事。");
-            Assert.AreEqual("llm", session.State.Mode, "被丢弃的迟到结果不能触发离线降级。");
+            Assert.IsNull(session.State!.PendingEvent);
+            Assert.AreEqual("llm", session.State.Mode);
             Assert.AreEqual(string.Empty, session.State.AgentStatus);
-            Assert.AreEqual(selectedRevision, session.State.Revision);
-            Assert.HasCount(peopleBefore + 3, session.State.People, "已结算选项效果不能被迟到响应重置或重复应用。");
+            Assert.HasCount(peopleBefore + 3, session.State.People, "移除叙事调用不能改变规则选项效果。");
             Assert.AreEqual(trainingBefore + 1, session.State.Player.Training);
-            Assert.IsFalse(session.State.History.Any(e => e.Kind == "agent"), "迟到的主持结果不能产生失败/降级历史。");
+            Assert.AreEqual(0, handler.Calls);
         }
         finally
         {
@@ -309,7 +303,7 @@ public sealed class AutomaticAgentTests
     }
 
     [TestMethod]
-    public async Task ConfiguredConcurrencyLimitIncludesCouncilAndAgentRequests()
+    public async Task ConfiguredConcurrencyLimitIncludesSectAndContextRequests()
     {
         var root = NewDirectory();
         var handler = new FlowHandler(responseDelayMilliseconds: 20);
@@ -322,10 +316,10 @@ public sealed class AutomaticAgentTests
             var revision = session.State!.Revision;
             await PumpUntilAsync(session, () => !session.HasBackgroundWork, TimeSpan.FromSeconds(15));
 
-            Assert.IsGreaterThan(0, handler.CouncilCalls, "开宗议事主持应走共享后台并发调度。");
+            Assert.AreEqual(0, handler.CouncilCalls, "议事不能占用后台模型并发。");
             Assert.IsTrue(handler.PeakConcurrency is > 1 and <= 2,
-                "议事主持、宗门Agent及上下文请求的并发均不得超过 runtime.maxConcurrentRequests。");
-            Assert.AreEqual(revision, session.State!.Revision, "Pump 收集叙事与记忆不能增加 Revision。");
+                "宗门Agent及上下文请求的并发均不得超过 runtime.maxConcurrentRequests。");
+            Assert.AreEqual(revision, session.State!.Revision, "Pump 收集记忆不能增加 Revision。");
         }
         finally
         {
@@ -387,26 +381,20 @@ public sealed class AutomaticAgentTests
         bool ignoreCancellationForBlockedPlan = false,
         bool blockAllResponses = false,
         string? targetSect = null,
-        int responseDelayMilliseconds = 0,
-        bool blockCouncilResponse = false,
-        bool ignoreCancellationForBlockedCouncil = false) : HttpMessageHandler
+        int responseDelayMilliseconds = 0) : HttpMessageHandler
     {
         private readonly TaskCompletionSource<bool> firstModelRequest = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<bool> blockedPlan = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource<bool> blockedCouncil = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<bool> latePlanResponse = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource<bool> lateCouncilResponse = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<bool> release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ConcurrentDictionary<string, int> requestsBySect = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, int> failuresBySect = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, ConcurrentQueue<string>> planTargets = new(StringComparer.Ordinal);
-        private int calls, active, peak, councilCalls, blockedOnce, blockedCouncilOnce, canceledBlockedRequests;
+        private int calls, active, peak, councilCalls, blockedOnce, canceledBlockedRequests;
 
         public Task FirstModelRequest => firstModelRequest.Task;
         public Task BlockedPlan => blockedPlan.Task;
-        public Task BlockedCouncil => blockedCouncil.Task;
         public Task LatePlanResponse => latePlanResponse.Task;
-        public Task LateCouncilResponse => lateCouncilResponse.Task;
         public int Calls => Volatile.Read(ref calls);
         public int PeakConcurrency => Volatile.Read(ref peak);
         public int CouncilCalls => Volatile.Read(ref councilCalls);
@@ -448,22 +436,21 @@ public sealed class AutomaticAgentTests
                 if (isCouncil)
                 {
                     Interlocked.Increment(ref councilCalls);
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("Council narration must not be requested.") };
                 }
-                else if (actor is not null && actor == failSect && (failAlways || !failuresBySect.ContainsKey(actor)))
+                if (actor is not null && actor == failSect && (failAlways || !failuresBySect.ContainsKey(actor)))
                 {
                     failuresBySect.AddOrUpdate(actor!, 1, (_, count) => count + 1);
                     return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("synthetic unavailable") };
                 }
 
                 var shouldBlockPlan = isPlan && actor == blockFinalPlanSect && Interlocked.CompareExchange(ref blockedOnce, 1, 0) == 0;
-                var shouldBlockCouncil = isCouncil && blockCouncilResponse && Interlocked.CompareExchange(ref blockedCouncilOnce, 1, 0) == 0;
-                if (blockAllResponses || shouldBlockPlan || shouldBlockCouncil)
+                if (blockAllResponses || shouldBlockPlan)
                 {
                     if (shouldBlockPlan) blockedPlan.TrySetResult(true);
-                    if (shouldBlockCouncil) blockedCouncil.TrySetResult(true);
                     try
                     {
-                        if (shouldBlockCouncil && ignoreCancellationForBlockedCouncil || shouldBlockPlan && ignoreCancellationForBlockedPlan) await release.Task;
+                        if (shouldBlockPlan && ignoreCancellationForBlockedPlan) await release.Task;
                         else await release.Task.WaitAsync(cancellationToken);
                     }
                     catch (OperationCanceledException)
@@ -474,12 +461,6 @@ public sealed class AutomaticAgentTests
                 }
 
                 if (responseDelayMilliseconds > 0) await Task.Delay(responseDelayMilliseconds, cancellationToken);
-                if (isCouncil)
-                {
-                    var councilResponse = CouncilResponse(messages);
-                    if (shouldBlockCouncil) lateCouncilResponse.TrySetResult(true);
-                    return councilResponse;
-                }
                 if (!isPlan)
                     return JsonResponse(new
                     {
@@ -523,19 +504,6 @@ public sealed class AutomaticAgentTests
                 current = Volatile.Read(ref peak);
                 if (concurrent <= current) return;
             } while (Interlocked.CompareExchange(ref peak, concurrent, current) != current);
-        }
-
-        private static HttpResponseMessage CouncilResponse(JsonElement messages)
-        {
-            using var input = JsonDocument.Parse(messages[0].GetProperty("content").GetString()!);
-            var choices = input.RootElement.GetProperty("choices").EnumerateArray()
-                .Select(choice => new { id = choice.GetProperty("id").GetString(), flavor = "遵循规则效果，慎思后行。" }).ToArray();
-            return JsonResponse(new
-            {
-                type = "message", role = "assistant", stop_reason = "tool_use",
-                content = new object[] { new { type = "tool_use", id = "council", name = "submit_council", input = new { title = "山门议事", text = "长老依史书与现状请掌门裁定。", choices } } },
-                usage = new { input_tokens = 1, output_tokens = 2 }
-            });
         }
 
         private static string? FindActor(JsonElement messages)

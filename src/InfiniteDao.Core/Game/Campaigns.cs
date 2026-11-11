@@ -12,7 +12,7 @@ public static partial class GameEngine
     public static int MinimumBattleMonths(GameState world, Region target)
     {
         var defended = target.Owner != "";
-        return (defended ? 36 + target.Fort * 9 : 12 + target.Fort * 2) + (target.Terrain is "关隘" or "雪原" or "湖泊" or "水洲" ? 6 : 0);
+        return (defended ? 6 + target.Fort * 2 : 2 + target.Fort) + (target.Terrain is "关隘" or "雪原" or "湖泊" or "水洲" ? 2 : 0);
     }
     public static int DefensePower(GameState world, Region region)
     {
@@ -59,7 +59,7 @@ public static partial class GameEngine
             }
             if (attacker.Stones >= campaign.MonthlyStones && attacker.Herbs >= campaign.MonthlyHerbs) Spend(attacker, campaign.MonthlyStones, campaign.MonthlyHerbs);
             else { campaign.Supply -= .2; attacker.Stability = Math.Max(0, attacker.Stability - 4); }
-            attacker.WarExhaustion = Math.Min(100, attacker.WarExhaustion + 2);
+            attacker.WarExhaustion = Math.Min(100, attacker.WarExhaustion + 1);
             if (campaign.Supply < .5)
             {
                 world.Campaigns.Remove(campaign);
