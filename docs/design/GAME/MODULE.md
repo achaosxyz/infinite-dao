@@ -39,6 +39,7 @@
 - 山河图是美术背景，地域、归属、人物和战役必须取自当前数据，不能把画中建筑当作固定世界事实。
 - 中文字体由本机系统字体提供，资源目录不分发 Windows 字体文件；资源说明见 [Assets/README.md](../../../src/InfiniteDao.Game/Assets/README.md)。
 - Windows 导出随包携带项目 MIT 和 `licenses/` 中的引擎、.NET 许可声明。Godot 官方固定版本文本保存在 `docs/GODOT_LICENSE.txt`、`docs/GODOT_COPYRIGHT.txt`；.NET 声明从构建 SDK 分发复制，不混同为项目许可证。
+- `tools/publish-game.ps1` 在资源导入前构建 Debug 编辑器程序集，随后导出 Windows 发布版本；干净机器不依赖本地已有的 Godot/.NET 构建缓存。
 
 ## 变更与验证
 

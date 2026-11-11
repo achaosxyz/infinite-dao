@@ -6,12 +6,22 @@ $template = Join-Path $root 'artifacts/godot-templates/templates/windows_release
 if (-not (Test-Path $template)) { throw 'Godot 4.7.2 .NET export templates are required in artifacts/godot-templates/templates/.' }
 if (-not (Test-Path (Join-Path $project 'InfiniteDao.Game.sln'))) { throw 'Godot .NET export requires src/InfiniteDao.Game/InfiniteDao.Game.sln.' }
 New-Item -ItemType Directory $output -Force | Out-Null
+Write-Host 'Building editor assemblies for resource import...'
+& $dotnet build (Join-Path $project 'InfiniteDao.Game.csproj') --configuration Debug --nologo
+if ($LASTEXITCODE -ne 0) { throw 'Godot editor assembly build failed.' }
+Write-Host 'Importing native project resources...'
 & $godot --headless --editor --path $project --import
 if ($LASTEXITCODE -ne 0) { throw 'Godot resource import failed.' }
-$exportLog = & $godot --headless --path $project --export-release 'Windows Desktop' (Join-Path $output 'InfiniteDao.exe') 2>&1
+Write-Host 'Exporting native Windows executable...'
+$exportErrors = [System.Collections.Generic.List[string]]::new()
+& $godot --headless --path $project --export-release 'Windows Desktop' (Join-Path $output 'InfiniteDao.exe') 2>&1 | ForEach-Object {
+    $line = "$_"
+    Write-Host $line
+    if ($line -match '(^|\s)ERROR:') { $exportErrors.Add($line) }
+}
 $exportCode = $LASTEXITCODE
-$exportLog | ForEach-Object { Write-Host $_ }
-if ($exportCode -ne 0 -or ($exportLog | Where-Object { "$_" -match '(^|\s)ERROR:' })) { throw 'Native Windows export failed; inspect the Godot export errors above.' }
+if ($exportCode -ne 0 -or $exportErrors.Count -gt 0) { throw 'Native Windows export failed; inspect the Godot export errors above.' }
+Write-Host 'Copying portable documentation and configuration examples...'
 New-Item -ItemType Directory (Join-Path $output 'config') -Force | Out-Null
 Copy-Item 'config/llm.example.json' (Join-Path $output 'config/llm.example.json') -Force
 if (-not (Test-Path (Join-Path $output 'config/llm.local.json'))) {

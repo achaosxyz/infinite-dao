@@ -43,6 +43,8 @@ dotnet test InfiniteDao.slnx --configuration Release --nologo -v minimal
 
 本地发布链的全量离线测试为102项通过，记录位于 `artifacts/verification/release-tests.log`。干净打包和启动检查通过，记录位于 `artifacts/verification/package-final.log`；ZIP 内容审查确认包含四份第三方声明、不含本地配置或存档。解压该 ZIP 后的真实窗口验收也通过，报告为 `artifacts/verification/windows-package/InfiniteDao-Godot-Windows/artifacts/verification/native/report.json`，日志为 `artifacts/verification/zip-native.stdout.log`。这些本地产物不进入源码提交。
 
+无 `bin/`、`obj/`、`.godot/` 的独立源码副本通过编辑器预构建、资源导入、发布导出、headless 启动和 ZIP 打包，记录为 `artifacts/verification/cold-prebuilt-package.log`；引擎、SDK 与 NuGet 包可使用本机已有工具，不据此声称网络或工具安装无缓存。
+
 ## 原生窗口覆盖
 
 执行真实原生窗口验收，不发送模型请求：

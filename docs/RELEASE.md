@@ -20,7 +20,7 @@ artifacts/godot-templates/templates/windows_release_x86_64.exe
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/publish-game.ps1
 ```
 
-脚本导入资源、构建原生客户端并输出到 `artifacts/releases/InfiniteDao-Godot-Windows/`。检查退出码和 Godot ERROR，不能因为出现 EXE 就宣布成功。
+脚本先构建 Debug 编辑器程序集，再导入资源并执行 Windows ExportRelease，输出到 `artifacts/releases/InfiniteDao-Godot-Windows/`。编辑器程序集只用于工具链，便携包仍是发布版本；首次构建不能依赖已有 `.godot/mono/temp/bin/Debug/` 缓存。各阶段和导出日志实时输出；检查退出码和 Godot ERROR，不能因为出现 EXE 就宣布成功。
 
 ## 3. 生成公开 ZIP
 

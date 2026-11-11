@@ -59,4 +59,6 @@ dotnet run --project src/InfiniteDao.Simulator -- check-config --config config/l
 
 开发使用 `develop`，修复复查后合并 `main`。两分支的 push 和以两分支为目标的 PR 都触发 [CI](../.github/workflows/ci.yml)，提交页面显示对应检查状态；绿勾表示检查通过，不是提交签名。合并 `main` 会在其 CI 成功后自动触发公开 Windows 预发行，执行前须有相应推送与发布授权。发布的触发、权限和产物见 [发布流程](RELEASE.md)。
 
+合并不要求 PR：等待 `develop` 的提交检查成功后，在本地将其合入 `main` 并推送即可。仅在用户明确要求时创建 PR；CI 对 PR 的支持不代表开发流程强制使用 PR。
+
 交付只陈述实际变更、验证、限制和未完成事项；未运行的测试或联网验证明确说明，不把计划当作结果。
