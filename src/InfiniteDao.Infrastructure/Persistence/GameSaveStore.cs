@@ -40,10 +40,13 @@ public sealed class GameSaveStore(string directory)
         try
         {
             var state = JsonSerializer.Deserialize<GameState>(json, Json) ?? throw new JsonException();
+            if (state.Relics.Any(r => r.Scope == "personal")) ValidatePersonalRelicFields(json);
             GameEngine.Validate(state);
-            var templateIds = WorldFactory.Templates().Select(s => s.Id).Order();
+            var templates = WorldFactory.Templates();
+            if (state.Sects.Count == 6) templates = templates.Take(6).ToList();
+            var templateIds = templates.Select(s => s.Id).Order();
             if (!templateIds.SequenceEqual(state.Sects.Select(s => s.Id).Order())) throw new GameRuleException("存档宗门标识与本游戏不匹配。");
-            foreach (var template in WorldFactory.Templates())
+            foreach (var template in templates)
             {
                 var sect = state.Sects.Single(s => s.Id == template.Id);
                 if (sect.Name != template.Name || sect.Color != template.Color || sect.Sigil != template.Sigil || sect.Portrait != template.Portrait || sect.Trait != template.Trait || sect.Motto != template.Motto || sect.Personality != template.Personality)
@@ -52,7 +55,7 @@ public sealed class GameSaveStore(string directory)
             // These labels also appear in SVG and select controls. Imported saves must
             // not turn a local game's content boundary into markup/script injection.
             if (state.Regions.Any(r => r.Index < 0 || r.Index >= state.Regions.Count || !SafeLabel(r.Name) || !SafeLabel(r.Terrain) || r.Id != $"r{r.Index + 1:00}")
-                || state.People.Any(p => !SafeLabel(p.Role) || !SafeLabel(p.Temperament) || p.Portrait is < 0 or > 5)
+                || state.People.Any(p => !SafeLabel(p.Role) || !SafeLabel(p.Temperament))
                 || state.Sects.Any(s => !WorldFactory.Policies.Contains(s.Policy)))
                 throw new GameRuleException("存档包含无效的地图或人物标记。");
             if (state.Mode is not ("llm" or "rules") || state.Status is not ("playing" or "victory") || state.Difficulty is not ("normal" or "story" or "hard") || state.CommandsLeft is < 0 or > 2 || state.NextId <= state.History.Select(e => e.Id).Concat(state.People.Select(p => p.Id)).DefaultIfEmpty(0).Max()) throw new GameRuleException("存档元数据无效。");
@@ -63,6 +66,21 @@ public sealed class GameSaveStore(string directory)
     }
 
     private static bool SafeLabel(string value) => value.Length is > 0 and < 100 && !value.Any(c => c is '<' or '>' or '&' or '"' or '\'' || char.IsControl(c));
+
+    private static void ValidatePersonalRelicFields(string json)
+    {
+        var allowed = new HashSet<string>(["id", "name", "owner", "effect", "power", "foundMonth", "originEvent", "scope", "templateId", "holderId", "regionId", "keepAssigned", "lastEventId"], StringComparer.OrdinalIgnoreCase);
+        using var document = JsonDocument.Parse(json);
+        var relicProperties = document.RootElement.EnumerateObject().Where(p => p.Name.Equals("relics", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (relicProperties.Length != 1) throw new GameRuleException("个人法宝集合重复或缺失。");
+        foreach (var relic in relicProperties[0].Value.EnumerateArray())
+        {
+            var fields = relic.EnumerateObject().ToArray();
+            if (fields.Any(p => p.Name.Equals("scope", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() == "personal")
+                && (fields.Any(p => !allowed.Contains(p.Name)) || fields.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != fields.Length))
+                throw new GameRuleException("个人法宝包含不允许的额外属性。");
+        }
+    }
 
     public async Task<List<SaveSummary>> ListAsync()
     {

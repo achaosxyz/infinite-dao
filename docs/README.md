@@ -36,6 +36,7 @@ AGENTS.md
 | 会话、后台任务、提交、重试与离线 | [APPLICATION/MODULE.md](design/APPLICATION/MODULE.md) |
 | 保存、导入校验与存档列表 | [INFRASTRUCTURE/MODULE.md](design/INFRASTRUCTURE/MODULE.md) |
 | Godot、视图、控件、时间与地图输入 | [GAME/MODULE.md](design/GAME/MODULE.md) |
+| 人物画法、宗徽、HUD 配色和美术生产验收 | [GAME/ART_STYLE.md](design/GAME/ART_STYLE.md) |
 | 配置检查命令行 | [SIMULATOR/MODULE.md](design/SIMULATOR/MODULE.md) |
 
 ## 维护规则

@@ -13,13 +13,15 @@ Choose a cultivation sect, set its direction, and watch disciples grow and terri
 
 ## Features
 
-- **Six playable sects and 192 regions** across twelve prefectures, with difficulty and world-seed selection.
+- **Ten playable sects and 192 regions** across twelve prefectures, with difficulty and world-seed selection.
 - **Strategy-driven automation** for recruitment, construction, cultivation, journeys, and war preparations; you decide major events.
-- **Individual disciples** with focused training, accompanying guardians, breakthroughs, injuries, aging, and death.
-- **Years-long campaigns** resolved through supply, formations, relics, realm differences, and individual combat—not aggregate power alone.
-- **Exile and rebuilding** with surviving disciples and inherited knowledge; eliminate the other five sects to achieve unification.
+- **Meaningful individual growth** across eight realms, five fixed innate-trait tiers, shorter lifespans, ascension after ten years in the final realm, costly retention, and inherited sect foundation bonuses.
+- **Personal relics passed on naturally**: stewards distribute and replace them automatically; you can optionally grant a relic to a focused disciple, while loss and recovery remain in the chronicles.
+- **A unified jade-and-ivory HUD and 50 character illustrations**: portraits stay with each character through succession and save/load. This version accepts only new Schema 4 saves; older files are preserved but not migrated.
+- **Multi-month campaigns** where higher-realm cultivators can strike multiple lower-realm foes per round; supply, formations, relics, and injuries still affect the outcome—not aggregate power alone. Shorter sieges avoid exhausting attackers before the battle starts.
+- **Exile and rebuilding** with surviving disciples and inherited knowledge; eliminate all other sect lineages to achieve unification.
 - **Pause and inspect** the map, sects, people, diplomacy, treasury, and chronicles; use local automatic and manual saves.
-- **Optional background Agents** using an Anthropic-compatible API, independent public memories, and persistent plans.
+- **Optional background Agents** using an Anthropic-compatible API, independent public memories, and persistent plans. Councils use rule-defined text without additional model requests.
 
 The game UI is currently **Chinese**. The complete offline game needs no model account, browser, Node.js, or game server.
 
@@ -52,7 +54,7 @@ The root launcher prefers an existing native export and uses workspace configura
 1. Choose your sect, difficulty, seed, and offline or intelligent mode, then resolve the opening council.
 2. Set a long-term direction; optionally focus training on disciples and assign higher-realm guardians.
 3. Let time advance automatically. Major events pause the world until you choose an option.
-4. Pause with Space or the pause control to inspect the world. Losing window focus pauses time; changing inspection pages does not.
+4. Non-map pages, detail overlays, and window focus loss pause time automatically. Returning to the map does not resume it; use Space or the resume control explicitly.
 5. Maintain supplies, cultivate talent, and wage sustained campaigns. If exiled, resolve the lineage event and select a place to rebuild.
 
 The detailed [playing guide](docs/PLAYING.md) is in Chinese.

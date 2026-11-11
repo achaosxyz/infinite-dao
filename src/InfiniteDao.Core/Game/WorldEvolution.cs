@@ -7,8 +7,15 @@ public static partial class GameEngine
         if (world.Status != "playing") throw new GameRuleException("此局已经结束。");
         if (world.PendingEvent is not null) throw new GameRuleException("请先处理议事再推进世界。");
         if (world.Player.Exiled) throw new GameRuleException("请先为幸存门徒选择重建之地。");
+        if (Members(world, world.Player).Any(p => p.Realm == WorldFactory.MaximumRealm && p.RealmMonths >= 108 && !p.AscensionWarned))
+        {
+            world.PendingEvent = AscensionCouncil(world);
+            Validate(world);
+            return;
+        }
         var chosen = decisions ?? RuleDecisions(world);
         ApplyDecisions(world, chosen);
+        var unaffiliated = world.People.Where(p => p.Alive && p.SectId == "").ToList();
         world.Month++;
         world.CommandsLeft = 2;
         foreach (var sect in world.Sects.Where(s => !s.Eliminated).OrderBy(s => s.Id))
@@ -22,6 +29,10 @@ public static partial class GameEngine
             sect.Herbs += HerbIncome(world, sect);
             if (world.AutoStewardship) ProvisionSect(world, sect);
             var reservedHerbs = ReservedHerbs(world, sect);
+            var herbUpkeep = HerbUpkeep(world, sect);
+            var herbLack = Math.Max(0, herbUpkeep - sect.Herbs);
+            sect.Herbs = Math.Max(0, sect.Herbs - herbUpkeep);
+            if (herbLack > 0) sect.Stability = Math.Max(0, sect.Stability - 3);
             if (lack > 0)
             {
                 sect.Stability = Math.Max(0, sect.Stability - 6);
@@ -39,35 +50,53 @@ public static partial class GameEngine
                 var capacity = 50_000 + region.Development * 20_000 + region.Spirit * 6_000;
                 if (region.Population < capacity) region.Population += Math.Max(1, (capacity - region.Population) / 500);
             }
-            foreach (var person in Members(world, sect).OrderBy(p => p.Id).ToList())
+            var priorityBreakthrough = PriorityBreakthrough(world, sect);
+            foreach (var person in Members(world, sect).OrderByDescending(p => p.Focused).ThenByDescending(p => p.InnateTrait).ThenByDescending(p => p.Realm).ThenBy(p => p.Id).ToList())
             {
                 person.AgeMonths++;
                 person.RealmMonths++;
-                if (person.AgeMonths >= WorldFactory.Lifespans[person.Realm] * 12)
+                if (person.AgeMonths >= MaximumAgeMonths(person))
                 {
-                    person.Alive = false;
+                    person.Alive = false; person.RetainInWorld = false;
                     person.Biography += $" 青岚历{world.Month / 12 + 1}年寿尽坐化，享年{person.AgeMonths / 12}岁。";
-                    Log(world, "death", "仙路有尽", $"{sect.Name}的{person.Role}{person.Name}寿尽坐化，享年 {person.AgeMonths / 12} 岁。", [sect.Id]);
+                    var death = Log(world, "death", "仙路有尽", $"{sect.Name}的{person.Role}{person.Name}寿尽坐化，享年 {person.AgeMonths / 12} 岁。", [sect.Id]);
+                    var relic = HeldRelic(world, person.Id);
+                    if (relic is not null)
+                    {
+                        var journey = world.Expeditions.FirstOrDefault(e => e.DiscipleId == person.Id || e.GuardianId == person.Id);
+                        var campaign = world.Campaigns.FirstOrDefault(c => c.Participants.Contains(person.Id));
+                        var awayRegion = journey?.RegionId ?? campaign?.Target;
+                        MoveRelic(world, relic, awayRegion is null ? sect.Id : "", null, awayRegion ?? sect.Capital, awayRegion is null ? "遗物归库" : "途中遗失", death);
+                    }
                     continue;
                 }
-                person.Injury = Math.Max(0, person.Injury - (IsAway(world, person.Id) ? 1 : sect.Trait == "herb" ? 5 : 3));
-                if (NeedsCultivation(person))
+                if (ResolveAscension(world, sect, person)) continue;
+                person.Injury = Math.Max(0, person.Injury - (IsAway(world, person.Id) ? 1 : sect.Trait is "herb" or "body" ? 5 : 3));
+                var priorityCost = priorityBreakthrough is { Alive: true } priority && priority.Id != person.Id
+                    ? BreakthroughCost(priority, false) : (Stones: 0, Herbs: 0);
+                var trainingReserve = reservedHerbs + priorityCost.Herbs;
+                var priorityReady = priorityBreakthrough?.Id == person.Id && person.Progress >= 110;
+                if (NeedsCultivation(person) && !priorityReady && lack == 0 && herbLack == 0)
                 {
                     var herbCost = 1 + person.Realm;
-                    var supplied = sect.Herbs >= herbCost + reservedHerbs;
+                    var supplied = sect.Herbs >= herbCost + trainingReserve;
                     if (supplied) sect.Herbs -= herbCost;
                     var progress = (1 + person.Potential / 25 + sect.Doctrine) * (sect.Policy == "cultivation" ? 15 : 10) / 10;
                     if (sect.Trait == "ice") progress += 2;
-                    if (person.Focused && sect.Herbs >= reservedHerbs + 3 + person.Realm * 2)
+                    if (sect.Trait == "star") progress++;
+                    progress = Math.Max(1, (int)(progress * WorldFactory.InnateCultivationMultipliers[person.InnateTrait] * FoundationMultiplier(sect)));
+                    if (person.Focused && sect.Herbs >= trainingReserve + 3 + person.Realm * 2)
                     { sect.Herbs -= 3 + person.Realm * 2; progress *= 2; }
                     if (IsAway(world, person.Id)) progress = Math.Max(1, progress / 3);
-                    if (!supplied || lack > 0) progress = Math.Max(1, progress / 3);
+                    if (!supplied || lack > 0 || herbLack > 0) progress = 0;
                     person.Progress = Math.Min(120, person.Progress + progress);
                 }
-                if (person.Progress >= 110 && person.Realm < 5 && person.RealmMonths >= WorldFactory.MinimumRealmMonths[person.Realm] && !IsAway(world, person.Id) && person.Injury < 30 && sect.Herbs >= reservedHerbs + 30 + person.Realm * 20 && sect.Stones >= 60 + person.Realm * 50)
+                var breakthroughCost = BreakthroughCost(person, false);
+                if (person.Progress >= 110 && CanAdvanceRealm(person) && person.RealmMonths >= WorldFactory.MinimumRealmMonths[person.Realm] && !IsAway(world, person.Id) && person.Injury < 30 && sect.Herbs >= reservedHerbs + breakthroughCost.Herbs + priorityCost.Herbs && sect.Stones >= ReservedStones(world, sect) + breakthroughCost.Stones + priorityCost.Stones)
                 {
-                    Spend(sect, 60 + person.Realm * 50, 30 + person.Realm * 20);
+                    Spend(sect, breakthroughCost.Stones, breakthroughCost.Herbs);
                     Breakthrough(world, sect, person, false);
+                    if (priorityBreakthrough?.Id == person.Id) priorityBreakthrough = null;
                 }
             }
             EnsureLeader(world, sect);
@@ -75,9 +104,20 @@ public static partial class GameEngine
             if (world.AutoStewardship) StewardDevelop(world, sect);
             else if (sect.Id != world.PlayerId) RivalDevelop(world, sect);
         }
+        foreach (var person in unaffiliated)
+        {
+            person.AgeMonths++; person.RealmMonths++;
+            if (person.AgeMonths < MaximumAgeMonths(person)) { ResolveAscension(world, null, person); continue; }
+            person.Alive = false; person.RetainInWorld = false;
+            person.Biography += $" 青岚历{world.Month / 12 + 1}年寿尽坐化。";
+            var death = Log(world, "death", "散修寿尽", $"{person.Name}寿尽坐化。", []);
+            var relic = HeldRelic(world, person.Id);
+            if (relic is not null) MoveRelic(world, relic, "", null, relic.RegionId, "遗物失落", death);
+        }
         AdvanceCampaigns(world);
-        if (world.AutoStewardship) AdvanceExpeditions(world);
+        AdvanceExpeditions(world);
         RivalConflict(world);
+        if (world.Status == "playing" && world.PendingEvent is null && !world.Player.Exiled) world.PendingEvent = AscensionCouncil(world);
         if (world.Status == "playing" && world.PendingEvent is null && world.Month >= world.NextEventMonth)
         {
             world.PendingEvent = GenerateEvent(world);
@@ -178,7 +218,8 @@ public static partial class GameEngine
         {
             var sect = intent.Sect; var target = intent.Target!;
             if (engaged.Contains(sect.Id) || claimed.Contains(target.Id) || world.Campaigns.Any(c => c.Target == target.Id) || target.Owner == sect.Id) continue;
-            if (Members(world, sect).Count(p => !IsAway(world, p.Id) && p.Injury < 60) < 2) continue;
+            var participants = CampaignMembers(world, sect);
+            if (participants.Count == 0) continue;
             var defender = world.Sects.FirstOrDefault(s => s.Id == target.Owner);
             if (defender is not null && (engaged.Contains(defender.Id) || AtPeace(world, sect, defender))) continue;
             var costs = CampaignCosts(world, sect, target);
@@ -186,7 +227,7 @@ public static partial class GameEngine
                 || sect.Herbs < 20 + costs.Duration * costs.Herbs)) continue;
             var aggression = sect.Policy == "expansion" ? 0.8 : sect.Policy == "prosperity" ? 0.15 : 0.4;
             if (world.Random() > aggression) continue;
-            if (defender is not null && Power(world, sect) < Power(world, defender) * 0.8) continue;
+            if (!CanChallengeGarrison(world, sect, target, participants)) continue;
             if (defender?.Id == world.PlayerId)
             {
                 if (world.PendingEvent is not null || world.Month < (world.Difficulty == "hard" ? 36 : world.Difficulty == "story" ? 120 : 60)) continue;

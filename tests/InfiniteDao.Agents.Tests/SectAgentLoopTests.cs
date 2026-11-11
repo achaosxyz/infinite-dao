@@ -11,6 +11,25 @@ namespace InfiniteDao.Agents.Tests;
 public sealed class SectAgentLoopTests
 {
     [TestMethod]
+    public void SelfObservationIncludesPersonalRelicRequirementsAndEffectWithoutMutatingWorld()
+    {
+        var (world, memory) = Fixture(); var sect = world.Sects.Single(s => s.Id == memory.SectId);
+        var person = GameEngine.Members(world, sect).First(); person.Realm = Math.Max(person.Realm, 1);
+        var relic = new Relic { Id = world.NewId(), Scope = "personal", TemplateId = "attack_2_1", Name = "赤霞火印", Owner = sect.Id, HolderId = person.Id, RegionId = sect.Capital, FoundMonth = world.Month };
+        world.Relics.Add(relic);
+        var origin = GameEngine.Log(world, "relic_discovery", "得宝", person.Name + "得宝", [sect.Id]);
+        world.History[^1].RelicChange = new RelicChange { RelicId = relic.Id, ToOwner = sect.Id, ToHolderId = person.Id, RegionId = sect.Capital };
+        relic.OriginEvent = relic.LastEventId = origin;
+        var before = JsonSerializer.Serialize(world);
+        using var input = JsonDocument.Parse("{\"section\":\"self\"}");
+        var query = typeof(SectAgentLoop).GetMethod("Query", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var result = (string)query.Invoke(null, [world, sect, "get_situation", input.RootElement])!;
+        StringAssert.Contains(result, "赤霞火印"); StringAssert.Contains(result, "筑基");
+        StringAssert.Contains(result, "12%"); StringAssert.Contains(result, "16%"); StringAssert.Contains(result, "25%");
+        Assert.AreEqual(before, JsonSerializer.Serialize(world), "只读观察不能修改法宝或世界");
+    }
+
+    [TestMethod]
     public async Task NativeToolLoopRelaysResultsButNeverPersistsThinking()
     {
         var (world, memory) = Fixture();

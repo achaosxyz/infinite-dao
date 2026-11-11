@@ -2,12 +2,12 @@ namespace InfiniteDao.Core.Game;
 
 public static partial class GameEngine
 {
-    private static bool NeedsCultivation(Cultivator person) => person.Realm < 5 && person.Progress < 120;
+    private static bool NeedsCultivation(Cultivator person) => CanAdvanceRealm(person) && person.Progress < 120;
     public static int ReservedHerbs(GameState world, Sect sect)
     {
-        if (!world.AutoStewardship) return 0;
         var campaign = world.Campaigns.FirstOrDefault(c => c.Attacker == sect.Id);
         if (campaign is not null) return campaign.MonthsRemaining * campaign.MonthlyHerbs;
+        if (!world.AutoStewardship) return 0;
         if (sect.Policy == "prosperity" || sect.Policy == "cultivation" || sect.Policy == "diplomacy") return 100;
         var target = world.Regions.FirstOrDefault(r => r.Id == sect.Target && r.Owner != sect.Id);
         if (target is null) return 180;
@@ -28,9 +28,10 @@ public static partial class GameEngine
     private static void ProvisionSect(GameState world, Sect sect)
     {
         var members = Members(world, sect);
-        var monthly = members.Where(NeedsCultivation).Sum(p => 1 + p.Realm + (p.Focused ? 3 + p.Realm * 2 : 0));
-        var desired = monthly * 6 + ReservedHerbs(world, sect) + 120;
-        var surplusStones = Math.Max(0, sect.Stones - ReservedStones(world, sect));
+        var cultivation = CultivationReserve(world, sect);
+        var monthly = HerbUpkeep(world, sect) + members.Where(NeedsCultivation).Sum(p => 1 + p.Realm + (p.Focused ? 3 + p.Realm * 2 : 0));
+        var desired = monthly * 6 + ReservedHerbs(world, sect) + cultivation.Herbs + 120;
+        var surplusStones = Math.Max(0, sect.Stones - ReservedStones(world, sect) - cultivation.Stones);
         // The market converts actual accumulated wealth; no free material or silent deficit subsidy.
         var purchased = Math.Min(Math.Max(0, desired - sect.Herbs), Math.Min(surplusStones / 4, Math.Max(50, HerbIncome(world, sect) * 3)));
         if (purchased <= 0) return;

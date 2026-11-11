@@ -52,13 +52,11 @@ public sealed partial class GameSession
             return;
         }
         var limit = config.Runtime!.MaxConcurrentRequests;
-        if (world.PendingEvent is { NarrativeSource: not "llm" } council)
-            Start("council:" + council.Id, "议事主持", "", council.Id, "关键议事");
         foreach (var sect in world.Sects.Where(s => s.Id != world.PlayerId && !s.Eliminated).OrderBy(s => s.Id))
         {
             var memory = world.AgentMemories.SingleOrDefault(m => m.SectId == sect.Id) ?? new SectAgentMemory { SectId = sect.Id };
             var trigger = SectAgentSchedule.WakeReason(world, sect, memory);
-            if (trigger != "") Start(sect.Id, sect.Name, sect.Id, null, trigger);
+            if (trigger != "") Start(sect.Id, sect.Name, sect.Id, trigger);
         }
         Volatile.Write(ref activeBackgroundJobs, backgroundJobs.Count);
         var retrying = backgroundJobs.Values.FirstOrDefault(j => Volatile.Read(ref j.RetryNumber) > 0);
@@ -68,10 +66,10 @@ public sealed partial class GameSession
             Volatile.Write(ref activity, $"{backgroundJobs.Count} 个Agent后台议政中 · 世界继续演进");
         else if (backgroundJobs.Count == 0) Volatile.Write(ref activity, "");
 
-        void Start(string key, string name, string sectId, int? eventId, string trigger)
+        void Start(string key, string name, string sectId, string trigger)
         {
             if (backgroundJobs.Count >= limit || backgroundJobs.ContainsKey(key)) return;
-            var job = new BackgroundJob(key, name, sectId, eventId, trigger, cancellationToken);
+            var job = new BackgroundJob(key, name, sectId, trigger, cancellationToken);
             backgroundJobs.Add(key, job);
             _ = RunBackground(job, backgroundEpoch, config);
         }
@@ -92,23 +90,13 @@ public sealed partial class GameSession
                     {
                         var snapshot = Volatile.Read(ref latestObservation)!.Copy();
                         if (!Relevant(snapshot, job)) break;
-                        if (job.EventId is not null)
-                        {
-                            await Request(token);
-                            var tokens = await new CouncilNarratorProvider(client).NarrateAsync(snapshot, config, token);
-                            backgroundUpdates.Enqueue(new(epoch, Job: job, Tokens: tokens));
-                            backgroundUpdates.Enqueue(new(epoch, Job: job, Council: snapshot.PendingEvent));
-                        }
-                        else
-                        {
-                            var sect = snapshot.Sects.Single(s => s.Id == job.SectId);
-                            var memory = snapshot.AgentMemories.SingleOrDefault(m => m.SectId == sect.Id) ?? new SectAgentMemory { SectId = sect.Id };
-                            memory.LastTrigger = job.Trigger;
-                            await new SectAgentLoop(client).RunAsync(snapshot, sect, memory, config, Request,
-                                (tokens, _) => { backgroundUpdates.Enqueue(new(epoch, Job: job, Tokens: tokens)); return Task.CompletedTask; }, token,
-                                _ => { backgroundUpdates.Enqueue(new(epoch, Job: job, ContextChecks: 1)); return Task.CompletedTask; });
-                            backgroundUpdates.Enqueue(new(epoch, Job: job, Memory: memory));
-                        }
+                        var sect = snapshot.Sects.Single(s => s.Id == job.SectId);
+                        var memory = snapshot.AgentMemories.SingleOrDefault(m => m.SectId == sect.Id) ?? new SectAgentMemory { SectId = sect.Id };
+                        memory.LastTrigger = job.Trigger;
+                        await new SectAgentLoop(client).RunAsync(snapshot, sect, memory, config, Request,
+                            (tokens, _) => { backgroundUpdates.Enqueue(new(epoch, Job: job, Tokens: tokens)); return Task.CompletedTask; }, token,
+                            _ => { backgroundUpdates.Enqueue(new(epoch, Job: job, ContextChecks: 1)); return Task.CompletedTask; });
+                        backgroundUpdates.Enqueue(new(epoch, Job: job, Memory: memory));
                         Volatile.Write(ref job.RetryNumber, 0);
                         break;
                     }
@@ -145,16 +133,14 @@ public sealed partial class GameSession
         }
     }
 
-    private static bool Relevant(GameState world, BackgroundJob job) => job.EventId is int id
-        ? world.PendingEvent?.Id == id && world.PendingEvent.NarrativeSource != "llm"
-        : world.Sects.Any(s => s.Id == job.SectId && !s.Eliminated && s.Id != world.PlayerId);
+    private static bool Relevant(GameState world, BackgroundJob job) =>
+        world.Sects.Any(s => s.Id == job.SectId && !s.Eliminated && s.Id != world.PlayerId);
 
-    private sealed class BackgroundJob(string key, string name, string sectId, int? eventId, string trigger, CancellationToken cancellationToken)
+    private sealed class BackgroundJob(string key, string name, string sectId, string trigger, CancellationToken cancellationToken)
     {
         public string Key { get; } = key;
         public string Name { get; } = name;
         public string SectId { get; } = sectId;
-        public int? EventId { get; } = eventId;
         public string Trigger { get; } = trigger;
         public int RetryNumber;
         public CancellationTokenSource Cancellation { get; } = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -162,5 +148,5 @@ public sealed partial class GameSession
     }
 
     private sealed record BackgroundUpdate(int Epoch, BackgroundJob? Job = null, int Requests = 0, long Tokens = 0, int ContextChecks = 0,
-        string? Status = null, SectAgentMemory? Memory = null, GameEvent? Council = null, bool Finished = false, bool Failed = false);
+        string? Status = null, SectAgentMemory? Memory = null, bool Finished = false, bool Failed = false);
 }

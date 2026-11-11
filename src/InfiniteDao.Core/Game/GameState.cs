@@ -4,7 +4,7 @@ namespace InfiniteDao.Core.Game;
 
 public sealed class GameState
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 4;
     public int Seed { get; set; }
     public uint RandomState { get; set; }
     public long Revision { get; set; }
@@ -69,6 +69,7 @@ public sealed class Sect
     public int Doctrine { get; set; } = 1;
     public int Training { get; set; } = 1;
     public int Intel { get; set; }
+    public int Foundation { get; set; }
     public int WarExhaustion { get; set; }
     public string Policy { get; set; } = "balanced";
     public string Target { get; set; } = "";
@@ -110,6 +111,10 @@ public sealed class Cultivator
     public int Injury { get; set; }
     public int Progress { get; set; }
     public int RealmMonths { get; set; }
+    public int InnateTrait { get; set; }
+    public bool RetainInWorld { get; set; }
+    public bool AscensionWarned { get; set; }
+    public bool Ascended { get; set; }
     public bool Focused { get; set; }
     public int? GuardianId { get; set; }
     public int NextJourneyMonth { get; set; } = 12;
@@ -131,6 +136,17 @@ public sealed class Chronicle
     public List<string> Sects { get; set; } = [];
     public List<int> Causes { get; set; } = [];
     public string Delta { get; set; } = "";
+    public RelicChange? RelicChange { get; set; }
+}
+
+public sealed class RelicChange
+{
+    public int RelicId { get; set; }
+    public int? FromHolderId { get; set; }
+    public int? ToHolderId { get; set; }
+    public string FromOwner { get; set; } = "";
+    public string ToOwner { get; set; } = "";
+    public string RegionId { get; set; } = "";
 }
 
 public sealed class Relic
@@ -142,6 +158,12 @@ public sealed class Relic
     public int Power { get; set; }
     public int FoundMonth { get; set; }
     public int OriginEvent { get; set; }
+    public string Scope { get; set; } = "sect";
+    public string TemplateId { get; set; } = "";
+    public int? HolderId { get; set; }
+    public string RegionId { get; set; } = "";
+    public bool KeepAssigned { get; set; }
+    public int LastEventId { get; set; }
 }
 
 public sealed class GameEvent
@@ -153,7 +175,9 @@ public sealed class GameEvent
     public string Eyebrow { get; set; } = "宗门议事";
     public string Actor { get; set; } = "";
     public string Target { get; set; } = "";
+    // Retained save metadata; council text never schedules model work.
     public string NarrativeSource { get; set; } = "rules";
+    public int ResourceScale { get; set; } = 1;
     public List<EventChoice> Choices { get; set; } = [];
 }
 
@@ -235,4 +259,8 @@ public sealed class DuelExchange
     public int Hits { get; set; }
     public double Damage { get; set; }
     public double RealmMultiplier { get; set; }
+    public string RelicName { get; set; } = "";
+    public string RelicCategory { get; set; } = "";
+    public int RelicTier { get; set; }
+    public double RelicBonus { get; set; }
 }

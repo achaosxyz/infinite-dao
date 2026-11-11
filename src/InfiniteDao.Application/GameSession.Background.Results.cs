@@ -60,14 +60,6 @@ public sealed partial class GameSession
                 if (update.Job is { } owner && world.AgentStatus.StartsWith(owner.Name, StringComparison.Ordinal)) world.AgentStatus = "";
                 changed = true;
             }
-            if (update.Council is { } narration && world.PendingEvent is { } council && council.Id == narration.Id)
-            {
-                // Only presentation changes; choice identities, prices and rule effects stay current.
-                if (!council.Choices.Select(c => c.Id).SequenceEqual(narration.Choices.Select(c => c.Id))) continue;
-                council.Title = narration.Title; council.Text = narration.Text; council.NarrativeSource = "llm";
-                foreach (var choice in council.Choices) choice.Flavor = narration.Choices.Single(c => c.Id == choice.Id).Flavor;
-                changed = true;
-            }
         }
         Volatile.Write(ref activeBackgroundJobs, backgroundJobs.Count);
         return changed;

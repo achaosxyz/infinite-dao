@@ -19,7 +19,7 @@ public partial class GameClient : Control
     private GameState? world;
     private ModelConnectionStatus model = new(false, "high", 0, 0);
     private Texture2D landscape = null!;
-    private Texture2D portraits = null!;
+    private Texture2D[] portraits = [];
     private Control surface = null!;
     private Control? overlay;
     private Label? statusLabel;
@@ -64,7 +64,7 @@ public partial class GameClient : Control
             model = session.ModelStatus();
             if (!model.Configured) mode = "rules";
             landscape = GD.Load<Texture2D>("res://Assets/qinglan-world.png");
-            portraits = GD.Load<Texture2D>("res://Assets/sect-leaders.png");
+            portraits = Enumerable.Range(0, WorldFactory.PortraitCount).Select(i => GD.Load<Texture2D>($"res://Assets/cultivator-{i:00}.png")).ToArray();
             hasSave = File.Exists(Path.Combine(saves ?? Path.Combine(root, "artifacts", "game", "saves"), "auto.json"));
             Render();
             if (verification) BeginNativeVerification();
@@ -117,7 +117,7 @@ public partial class GameClient : Control
             statusLabel.Text = (session.Activity.Length > 0 ? session.Activity : notice) + new string('·', 1 + (int)(Time.GetTicksMsec() / 500 % 3));
         else if (statusLabel is not null && IsInstanceValid(statusLabel) && session.Activity.Length > 0)
             statusLabel.Text = session.Activity;
-        if (paused || busy || overlay is not null || world is null || showTitle) return;
+        if (paused || page != "map" || busy || overlay is not null || world is null || showTitle) return;
         elapsed += delta;
         if (elapsed >= secondsPerMonth) { elapsed = 0; Advance(false); }
     }
@@ -231,7 +231,7 @@ public partial class GameClient : Control
             await session.Execute(revision, new GameCommand(type, target, option), lifetime.Token);
         }, "宗门安排结算中", () =>
         {
-            if (type == "choose" && world is { PendingEvent: null, Status: "playing" } && !world.Player.Exiled && !verification)
+            if (type == "choose" && page == "map" && overlay is null && !pauseRequested && world is { PendingEvent: null, Status: "playing" } && !world.Player.Exiled && !verification)
             { paused = false; elapsed = 0; }
         });
     }
@@ -266,10 +266,14 @@ public partial class GameClient : Control
         if (!paused) { paused = true; Render(); return; }
         if (busy || world.PendingEvent is not null || world.Player.Exiled || world.Status != "playing")
         { notice = "请先处理议事或重建山门，再继续演进。"; Render(); return; }
-        paused = false; elapsed = 0; Render();
+        page = "map"; paused = false; pauseRequested = false; elapsed = 0; Render();
     }
 
-    private void Navigate(string destination) { page = destination; Render(); }
+    private void Navigate(string destination)
+    {
+        if (destination != "map") { paused = true; pauseRequested = true; elapsed = 0; }
+        page = destination; Render();
+    }
 
     private void Render() => renderRequested = true;
 
@@ -340,7 +344,7 @@ public partial class GameClient : Control
             var snapshot = world; CloseOverlay();
             Run(async () =>
             {
-                if (import) { var info = new FileInfo(path); if (info.Length > 8_000_000) throw new GameRuleException("存档超过 8 MB，无法读取。"); await session.Commit(session.Saves.Parse(await File.ReadAllTextAsync(path))); }
+                if (import) await session.Commit(await ReadSaveImport(session.Saves, path));
                 else if (snapshot is not null) await File.WriteAllTextAsync(path, JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
             }, import ? "校验并导入存档" : "导出存档", () => { if (world is not null) { selectedRegion = world.Player.Capital; if (import) showTitle = false; } });
             dialog.QueueFree();
@@ -348,9 +352,15 @@ public partial class GameClient : Control
         dialog.Canceled += () => dialog.QueueFree(); dialog.PopupCentered(new Vector2I(900, 600));
     }
 
+    private static async Task<GameState> ReadSaveImport(GameSaveStore saves, string path)
+    {
+        if (new FileInfo(path).Length > 3L * GameSaveStore.MaximumSaveCharacters) throw new GameRuleException("存档文件超过导入大小限制。");
+        return saves.Parse(await File.ReadAllTextAsync(path));
+    }
+
     private void ShowOverlay(string title, Control content)
     {
-        paused = true; CloseOverlay();
+        paused = true; pauseRequested = true; elapsed = 0; CloseOverlay();
         overlay = new Control { MouseFilter = MouseFilterEnum.Stop }; AddChild(overlay); overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         var shade = new ColorRect { Color = new Color(0, .025f, .035f, .86f) }; overlay.AddChild(shade); shade.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         var center = new CenterContainer(); overlay.AddChild(center); center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -362,5 +372,5 @@ public partial class GameClient : Control
     private void CloseOverlay() { if (overlay is null) return; RemoveChild(overlay); overlay.QueueFree(); overlay = null; }
     private void ShowMessage(string title, string message) { var text = Text(message, wrap: true); text.CustomMinimumSize = new Vector2(700, 0); ShowOverlay(title, text); }
 
-    private void ShowHelp() => ShowMessage("掌门手札", "一、处理开宗之议后，世界自动演进。你只定战略方向，可重点培养三名门人，安排更高境护道人。纳新、建设、传功、疗伤与战争筹备均自动进行。\n\n二、十二府192处灵地。点击地图查看产出、阵法与边界。战争持续数年，月月供给；按实际门人逐一交锋，低一大境界伤害仅12%，总战力不代表胜负。\n\n三、门人自动修行与历练；突破须修龄，历练一至三年。护道人须实际同行，可能受伤或殉身；历练者不可同时出征。史书与人物资料保留亡者。\n\n四、各宗Agent独立在后台按需规划，默认最多10个同时运行，不阻塞时间；等待时沿用已有战略。返回计划须通过当前世界校验。调用可能持续计费；失败自动重试3次，仍失败会明确切换离线并记入史书，可在设置中手动恢复智能世界。\n\n五、末座山门失守，幸存门徒携道统出逃，选薪火去向并择地重建，仍是同一世界。灭掉其余五宗即统一青岚。\n\n空格：暂停／继续；推演一载：逐月最多一年，遇事即停；Esc：关闭面板／暂停；Ctrl+S：保存档一。可以随时暂停检查世界、宗门与人物。");
+    private void ShowHelp() => ShowMessage("掌门手札", "一、处理开宗之议后，世界自动演进。你只定战略方向，可重点培养三名门人，安排更高境护道人。纳新、建设、传功、疗伤与战争筹备均自动进行。\n\n二、十二府192处灵地。点击地图查看产出、阵法与边界。战争持续数年，月月供给；按实际门人逐一交锋，低一大境界伤害仅12%，总战力不代表胜负。\n\n三、门人自动修行与历练；突破须修龄，历练一至三年。护道人须实际同行，可能受伤或殉身；历练者不可同时出征。史书与人物资料保留亡者。\n\n四、各宗Agent独立在后台按需规划，默认最多10个同时运行，不阻塞时间；等待时沿用已有战略。返回计划须通过当前世界校验。调用可能持续计费；失败自动重试3次，仍失败会明确切换离线并记入史书，可在设置中手动恢复智能世界。\n\n五、末座山门失守，幸存门徒携道统出逃，选薪火去向并择地重建，仍是同一世界。消灭其余宗门的道统即可统一青岚。\n\n空格：暂停／继续；推演一载：逐月最多一年，遇事即停；Esc：关闭面板／暂停；Ctrl+S：保存档一。可以随时暂停检查世界、宗门与人物。");
 }

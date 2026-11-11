@@ -38,7 +38,7 @@ public sealed class SectStrategyProvider(HttpClient client)
             stability = s.Stability, power = GameEngine.Power(world, s), members = GameEngine.Members(world, s).Count,
             upkeep = GameEngine.Upkeep(world, s), income = GameEngine.Income(world, s), warExhaustion = s.WarExhaustion,
             herbIncome = GameEngine.HerbIncome(world, s), reservedStones = GameEngine.ReservedStones(world, s), reservedHerbs = GameEngine.ReservedHerbs(world, s),
-            goals = "延续道统、保障供养、发展人才、最终击败其他五宗。战役历时数年，先备足逐月军需；低一大境界对高境伤害仅12%，不可把总战力相等当作势均力敌。修士历练或出征期间不能重复部署。",
+            goals = "延续道统、保障供养、发展人才、最终击败其他宗门。战役历时数年，先备足逐月军需；低一大境界对高境伤害仅12%，不可把总战力相等当作势均力敌。修士历练或出征期间不能重复部署；个人法宝只作用于持有者，御敌最高提高16%伤害，护身最高相对降低25%历练遇险概率，库存不提供战力。",
             relations = s.Relations, truceUntilMonth = s.Truces,
             campaigns = world.Campaigns.Where(c => c.Attacker == s.Id || c.Defender == s.Id),
             realmComposition = GameEngine.Members(world, s).GroupBy(p => p.Realm).Select(g => new { realm = WorldFactory.RealmNames[g.Key], count = g.Count(), available = g.Count(p => !GameEngine.IsAway(world, p.Id)) }),

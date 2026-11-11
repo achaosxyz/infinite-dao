@@ -12,7 +12,7 @@
 2. 规则运行 Core，协议运行 Agents，会话/存档/并发运行 Integration；跨模块核心变更补充全量测试。
 3. 界面、输入、时钟和原生资源变更使用真实窗口；菜单必须打开、选择、关闭并覆盖失焦，不能只发选中信号。
 4. 需要验证真实模型时先确认明确的联网和费用授权，使用隔离存档；常规检查不联网。
-5. 检查退出码、报告、日志和测试数量，区分测试桩、真实窗口与真实服务证据；导出包按发布流程另验实际 EXE。
+5. 检查退出码、报告、日志和测试数量，区分测试桩、真实窗口与真实服务证据；按影响范围验证本地导出 EXE。发布后下载公开 ZIP 与校验文件，仅核验 SHA256，默认不启动下载包或重复运行游戏测试；用户明确要求时才追加下载包运行验收，具体见发布流程。
 6. 同步受影响的覆盖说明，交付时明确未执行项目和限制，不把自然通关、满窗压测或服务可用性当作已验证。
 
 仅文档或许可证变化时，检查名称、链接、`@` 引用、设计摘要和相关脚本语法；不为此重跑游戏、全量测试或付费验证。
@@ -25,15 +25,21 @@
 dotnet test InfiniteDao.slnx --configuration Release --nologo -v minimal
 ```
 
-使用仓库本地 SDK 时，以 `artifacts/dotnet/dotnet.exe` 替换 `dotnet`。当前完整代码验收报告为102项通过，无失败或跳过，输出位于 `artifacts/verification/current-tests.log`。
+使用仓库本地 SDK 时，以 `artifacts/dotnet/dotnet.exe` 替换 `dotnet`。当前完整离线测试为159项通过，无失败或跳过，以 Release、`--no-restore` 运行；议事不请求模型，既有叙事字段可在Schema4存档中往返。日志位于 `artifacts/verification/balance-final.log`，各测试工程的 `TestResults/balance-final.trx` 保留详细结果。
 
 | 套件 | 通过数 | 当前主要覆盖 |
 |---|---:|---|
-| Core | 39 | 6000月标准世界、玩家自动扩张、资源、历练生死、护道、军需、逐人战斗、流亡重建与统一 |
-| Agents | 38 | 配置、原生工具循环、非法响应、公开记忆、上下文计数、90% compact 阈值与唤醒 |
-| Integration | 25 | CLI、保存恢复、慢模型下推进、Pump 不增加回合版本、独立重试、耗尽离线、重载隔离、失效目标、并发上限和迟到议事 |
+| Core | 91 | 八境特性与上限、寿尽、飞升和留世费用、底蕴、突破预算、多人飞升提醒队列、议事规模与攻守规则，以及6000月自动经营、法宝流转、护道生死、逐人战斗、流亡重建与立绘 |
+| Agents | 36 | 配置、原生策略工具循环、个人法宝只读观察、非法响应、公开记忆、上下文计数、90% compact 阈值与唤醒 |
+| Integration | 32 | CLI、Schema4保存恢复及其他版本拒绝、议事零模型请求与原文保留、个人法宝与保留选择、慢模型下推进、隔离重试、重载隔离及并发 |
+
+标准 seed8192 长测实际走到6000月，本次 Release 用时84.50秒；该样本序列化为35,632,076字符、35,632,076 UTF-8字节，低于64,000,000字符存档上限，包含286件法宝、53,116条历史。具体时长和体积依构建模式、机器、轨迹与世界规模变化，不能作为所有存档的容量保证。
+
+离线只读取样器对seed7、41、2026分别运行至480月，输出位于 `artifacts/verification/balance-probe-final.log`。三个样本的全世界在世人数分别为151、194、139，开局人物尚存34、41、42人；大乘在世人数为2、1、0，自然飞升为0、1、0。样本均出现百余场战斗与人物更替，不保证每个种子在数百月必然飞升或统一。
 
 异步故障注入报告位于 `artifacts/verification/async-agent-integration.log`。慢响应、服务失败、取消和迟到响应均由隔离 HTTP 测试桩控制，不代表真实付费服务的可用性。
+
+境界战斗回归以隔离构造阵容验证实际出征与月结战报，覆盖元婴对十名金丹、群攻目标边界及伤势、护阵、补给的影响。无主地用弱军拒绝与高境允许两个案例保护地方守卫评估；单轮夹具直接断言只命中四个不同低境目标、每个一次。个人法宝回归覆盖自动补位、同类换新、继承、赐予与恢复、护道和解体等去向，以及战斗效果和战报快照；存档测试覆盖版本拒绝、非法字段和人工保留往返。不把构造夹具冒充自然战役，也不把夹具胜负推定为任意条件下必胜或自然开局通关率。
 
 ## 文档与发布检查
 
@@ -41,9 +47,7 @@ dotnet test InfiniteDao.slnx --configuration Release --nologo -v minimal
 
 `tools/package-game.ps1` 从新的隔离目录导出，检查自包含运行时和便携文件，排除本地配置与玩家数据，并使用导出 EXE 的 `--headless --quit-after 5` 检查启动错误。此检查不覆盖显示、鼠标、菜单生命周期或真实窗口，不能替代下节验收。Windows 自动发布的提交来源、权限和附件校验见 [发布流程](RELEASE.md)。
 
-本地发布链的全量离线测试为102项通过，记录位于 `artifacts/verification/release-tests.log`。干净打包和启动检查通过，记录位于 `artifacts/verification/package-final.log`；ZIP 内容审查确认包含四份第三方声明、不含本地配置或存档。解压该 ZIP 后的真实窗口验收也通过，报告为 `artifacts/verification/windows-package/InfiniteDao-Godot-Windows/artifacts/verification/native/report.json`，日志为 `artifacts/verification/zip-native.stdout.log`。这些本地产物不进入源码提交。
-
-无 `bin/`、`obj/`、`.godot/` 的独立源码副本通过编辑器预构建、资源导入、发布导出、headless 启动和 ZIP 打包，记录为 `artifacts/verification/cold-prebuilt-package.log`；引擎、SDK 与 NuGet 包可使用本机已有工具，不据此声称网络或工具安装无缓存。
+当前源码窗口与本地导出 Windows EXE 均已完成真实窗口验收；不据此宣称完成干净 ZIP 打包或解压 ZIP 窗口验收。本地产物不进入源码提交。
 
 ## 原生窗口覆盖
 
@@ -53,16 +57,19 @@ dotnet test InfiniteDao.slnx --configuration Release --nologo -v minimal
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/start-game.ps1 -Verify
 ```
 
-它使用隔离存档，报告位于 `artifacts/verification/native/report.json`。当前报告 `passed: true`，`liveModel: null`，覆盖：
+它使用隔离存档。源码窗口报告与截图保存在 `artifacts/verification/native/`，`report.json` 为 `passed: true`、`liveModel: null`，覆盖：
 
-- 开宗选择、六个信息页、地图输入、键盘暂停、重点培养与更高境护道人。
+- 开宗选择、六个信息页、地图输入、键盘暂停、重点培养与更高境护道人；真实鼠标逐页验证非地图自动暂停、查看期间月份稳定、返回地图不擅自恢复。
+- 十宗开局、50张独立512×768立绘成功导入、人物固定立绘分配；完整滚轮事件、真实鼠标命中的地图缩放/复位及不误选后方地域、地域档案完整描述和相邻地域跳转、地图掌门小传绑定人物立绘、可点击公共纪事。标准与1100×700窗口检查按钮紧凑高度、时间控件居中、日期牌内容安全内边距与垂直居中、题签文字安全内边距、导航摘要内留白、窗口边界，并逐页检查宗徽未被拉伸。实际截图位于原生报告同目录。
 - 真实鼠标打开速度和宗门筛选菜单，失焦处理、键盘选择与切回全部宗门；不绕过弹出过程。
 - 宗门议政显示当前与归档计划的中文回顾，观察 JSON 和损坏的工具包不回显，原始会话保持不变。
-- 未修改标准 seed8192 推进到70月，观察自动经营和118条历练相关记录。
-- 显式终局夹具中87月的最后山门战役、个体交锋、统一界面与存档往返。
+- 未修改标准 seed8192 推进到60月，观察自动经营和171条历练相关记录。
+- 1100×700窗口真实鼠标开启并取消大乘留世，验证意愿与已提醒标记持久化，人物操作期间保持暂停。
+- 原生加载全部30张模板纹理；构造个人法宝夹具检查详情图、赐予与恢复托管、人物详情小窗滚动、故人当时和如今去向、流转纪事及真实人名；大于8MB的隔离合法存档走原生导入管线。成品透明及重复检查另见 `artifacts/verification/personal-relics-owner/asset-audit.json`。
+- 显式终局夹具中34月的最后山门战役、个体交锋、九宗覆灭、统一界面与存档往返。
 - 显式流亡夹具的撤离、薪火选择、购买落脚地与同一世界重建。
 
-独立导出 EXE 使用 `-- --verify-native` 验收，当前报告为 `artifacts/releases/InfiniteDao-Godot-Windows/artifacts/verification/native/report.json`，`passed: true` 且退出码0。输出见 `artifacts/verification/export-native.stdout.log`。不能以源码窗口通过代替导出包检查。
+独立导出 EXE 使用 `-- --verify-native` 单独验收，正常退出且报告为 `passed: true`、`liveModel: null`，包含16组检查及非地图暂停、留世真实鼠标操作。报告位于 `artifacts/releases/InfiniteDao-Godot-Windows/artifacts/verification/native/report.json`；其未修改开局样本推进至69月，记录194条历练相关事件，终局夹具为34月。源码与导出窗口的手动恢复时机可使自然推进月份不同，不作为规则确定性差异。
 
 ## 模型与费用边界
 
