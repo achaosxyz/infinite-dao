@@ -1,0 +1,50 @@
+# Core 模块
+
+## 职责与边界
+
+本模块位于 `src/InfiniteDao.Core/Game/`，维护权威世界和全部游戏规则，只依赖 .NET 基础库。全局结构见 [PROJECT_DESIGN.md](../PROJECT_DESIGN.md)。Core 不调用模型、不操作 Godot 节点、不读写存档文件。
+
+## 代码入口
+
+- `WorldFactory.cs`、`VastWorld.cs`：宗门模板、种子世界与默认192地域地图。
+- `GameState.cs`：世界、宗门、地域、人物、事件、战役、历练、战报和历史数据。
+- `GameEngine.cs`：命令、合法性校验、历史写入及公共规则查询。
+- `WorldEvolution.cs`：月度结算、策略采用、人物成长和掌门继承。
+- `Stewardship.cs`、`Provisions.cs`：自动经营、供养、采办与军需预留。
+- `Campaigns.cs`、`Conflicts.cs`、`CultivatorCombat.cs`：出征、目标竞争、补给与逐人交锋。
+- `CouncilEvents.cs`：关键议事、选项成本和实际效果。
+- `AgentPlans.cs`、`SectAgentMemory.cs`：模型计划的业务校验和可保存的公开记忆结构。
+
+## 数据模型
+
+`GameState` 保存月份、随机状态、提交版本和实体集合，通过 `Copy()` 复制世界后执行修改。实体关系使用宗门/地域字符串 ID、人物/事件整数 ID；历史 `Causes`、战役与历练起因、法宝来源必须引用有效事件。
+
+- `Sect` 的战略、资源、领地与生存状态是规则事实，不从叙事文本推导。
+- `Cultivator` 以 `Alive`、`Injury`、`AgeMonths`、`RealmMonths` 等字段记录持续成长和生死；`Focused` 与 `GuardianId` 影响培养和历练。
+- `Campaign`、`Expedition` 持续占用参与人物，不能双重部署；`BattleReport` 记录实际交锋。
+- `GameEvent.Choices` 决定可选身份和成本；选择效果由命令分支执行，`Flavor` 不生成规则效果。
+- `SectAgentMemory.Plan` 是意图，不等于已执行行动；执行后的 `AgentDecision` 和 `Chronicle` 才记录采用与结果。
+
+## 关键流程
+
+1. `GameEngine.Command` 校验并执行战略切换、议事、重点培养、护道人和重建等命令。
+2. `AdvanceMonth` 拒绝跳过待决议事、流亡重建或局终，采用完整的存续敌宗决策集合。
+3. 月结处理生产、供养、修炼、寿元、历练、经营和战争，并生成需要玩家裁定的事件。
+4. 世界校验通过后，由 Application 提交存档；Core 自身不提交 UI 或磁盘状态。
+
+## 当前规则约束
+
+- 地域有唯一控制者和相邻关系，只能向接壤地域出征；竞争目标不能由多个宗门重复占取。
+- 五个战略方向为 `balanced`、`prosperity`、`cultivation`、`expansion`、`diplomacy`；重点培养至多三人。
+- 六境为炼气、筑基、金丹、元婴、化神、返虚；突破受到修龄、进度、资源和人物状态约束。
+- 历练与战争有真实时长、资源开销和死亡风险；更高境护道人实际同行，不保证免死。
+- 战役按月消耗军需，断供撤军；境界、护阵、军阵、法宝、战术、情报、伤势、战疲和补给共同参与逐人战斗。
+- 同轮双方伤害同步结算；低一大境界的伤害倍率为0.12，多境差递乘，不能用总战力相等替代个体对局。
+- 玩家失守最后山门后保留幸存门徒与道统，仍可在同一世界重建；消灭其他五宗后进入统一终局。
+- 具体平衡常量由对应规则文件定义；修改常量须同时核对本模块、核心设计和回归断言，不把未验证数值写成已确认结论。
+
+## 变更与验证
+
+数据关系变更同步更新核心设计的“数据模型”；命令或月结变更同步更新“关键流程”。至少运行 `tests/InfiniteDao.Core.Tests/`，涉及会话或持久化时加跑 Integration。核心回归覆盖确定性、长期演化、资源、历练、生死、供给、战役、流亡与统一。
+
+执行方法见 [开发变更流程](../../DEVELOPMENT.md)，验收边界见 [VERIFICATION.md](../../VERIFICATION.md)。

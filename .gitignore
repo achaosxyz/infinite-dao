@@ -1,0 +1,31 @@
+# .NET / IDE
+**/bin/
+**/obj/
+**/.artifacts/
+*.csproj.old
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+node_modules/
+playwright-report/
+test-results/
+
+# Godot generated cache (keep source assets and resource identifiers)
+**/.godot/
+**/.mono/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Generated simulation reports, saves and build exports
+/artifacts/*
+!/artifacts/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db

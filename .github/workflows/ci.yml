@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Windows tests and docs
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Check documentation and scripts
+        shell: pwsh
+        run: ./tools/check-docs.ps1
+      - name: Run offline tests
+        shell: pwsh
+        run: dotnet test InfiniteDao.slnx --configuration Release --nologo --logger trx --results-directory artifacts/test-results
+      - name: Build native client
+        shell: pwsh
+        run: dotnet build src/InfiniteDao.Game/InfiniteDao.Game.csproj --configuration Release --nologo
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results
+          path: |
+            artifacts/test-results/*.trx
+            artifacts/verification/docs-check.json
+          if-no-files-found: error
+          retention-days: 14

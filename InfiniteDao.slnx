@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InfiniteDao.Agents/InfiniteDao.Agents.csproj" />
+    <Project Path="src/InfiniteDao.Application/InfiniteDao.Application.csproj" />
+    <Project Path="src/InfiniteDao.Core/InfiniteDao.Core.csproj" />
+    <Project Path="src/InfiniteDao.Game/InfiniteDao.Game.csproj" />
+    <Project Path="src/InfiniteDao.Infrastructure/InfiniteDao.Infrastructure.csproj" />
+    <Project Path="src/InfiniteDao.Simulator/InfiniteDao.Simulator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/InfiniteDao.Agents.Tests/InfiniteDao.Agents.Tests.csproj" />
+    <Project Path="tests/InfiniteDao.Core.Tests/InfiniteDao.Core.Tests.csproj" />
+    <Project Path="tests/InfiniteDao.IntegrationTests/InfiniteDao.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

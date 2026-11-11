@@ -1,0 +1,27 @@
+; Native desktop client. The simulation and persistence live in referenced C# libraries.
+config_version=5
+
+[application]
+config/name="无限修仙 · 宗门纪"
+config/icon="res://Assets/icon.svg"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+config/description="执掌一宗，问鼎万里山河。"
+
+[display]
+window/size/viewport_width=1440
+window/size/viewport_height=900
+window/size/window_width_override=1440
+window/size/window_height_override=900
+window/size/min_width=1100
+window/size/min_height=700
+window/stretch/mode="canvas_items"
+
+[dotnet]
+project/assembly_name="InfiniteDao.Game"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.035, 0.075, 0.094, 1)

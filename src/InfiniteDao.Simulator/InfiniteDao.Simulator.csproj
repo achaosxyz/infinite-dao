@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../InfiniteDao.Core/InfiniteDao.Core.csproj" />
+    <ProjectReference Include="../InfiniteDao.Agents/InfiniteDao.Agents.csproj" />
+    <ProjectReference Include="../InfiniteDao.Infrastructure/InfiniteDao.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

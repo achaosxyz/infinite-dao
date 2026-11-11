@@ -1,0 +1,24 @@
+{
+  "protocol": "anthropic-messages",
+  "endpoint": "",
+  "model": "",
+  "anthropicVersion": "2023-06-01",
+  "authMode": "x-api-key",
+  "apiKey": "",
+  "apiKeyEnvironmentVariable": "INFINITE_DAO_LLM_API_KEY",
+  "request": {
+    "timeoutSeconds": 90,
+    "maxOutputTokens": 4096,
+    "temperature": null,
+    "thinkingMode": "adaptive",
+    "reasoningEffort": "high"
+  },
+  "runtime": {
+    "maxConcurrentRequests": 10,
+    "strategyReviewMonths": 60,
+    "contextWindowTokens": 256000,
+    "compactionThreshold": 0.9,
+    "maxAgentSteps": 8,
+    "failurePolicy": "retry_then_rules"
+  }
+}
