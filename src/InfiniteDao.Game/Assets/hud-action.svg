@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="224" height="80" viewBox="0 0 224 80">
+  <defs><linearGradient id="jade" x2="0" y2="1"><stop stop-color="#35675e"/><stop offset=".48" stop-color="#204d47"/><stop offset="1" stop-color="#163d39"/></linearGradient></defs>
+  <path d="M12 1H212L223 12V68L212 79H12L1 68V12Z" fill="url(#jade)" stroke="#83A69A" stroke-width="1.4"/>
+  <path d="M15 6H209L218 15V65L209 74H15L6 65V15Z" fill="none" stroke="#659084" stroke-width=".7"/>
+  <path d="M8 24v-8l8-8h8M200 8h8l8 8v8M8 56v8l8 8h8M200 72h8l8-8v-8" fill="none" stroke="#A5BCAB"/>
+  <path d="M26 10H198" stroke="#D8EEE4" stroke-opacity=".22"/>
+</svg>

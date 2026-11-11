@@ -51,15 +51,20 @@ public partial class WorldMap : Control
         var ratio = Math.Max(Size.X / sourceSize.X, Size.Y / sourceSize.Y);
         var crop = Size / ratio;
         DrawTextureRectRegion(Landscape, new Rect2(Size * (1 - Zoom) / 2 + Pan, Size * Zoom), new Rect2((sourceSize - crop) / 2, crop));
-        DrawRect(new Rect2(Vector2.Zero, Size), new Color(.02f, .07f, .09f, .44f));
+        DrawRect(new Rect2(Vector2.Zero, Size), new Color(.94f, .96f, .91f, .06f));
         foreach (var region in World.Regions)
         {
             var color = region.Owner == "" ? NativeTheme.Gold : new Color(World.Sects.Single(s => s.Id == region.Owner).Color);
             var selected = region.Id == Selected;
             var poly = Polygon(region.Index);
-            DrawColoredPolygon(poly, new Color(color, selected ? .30f : .13f));
-            DrawPolyline([poly[0], poly[1], poly[2], poly[3], poly[0]], new Color(color, selected ? 1 : .5f), selected ? 2.4f : 1, true);
-            if (hovered == region.Index) DrawColoredPolygon(poly, new Color(1, 1, 1, .09f));
+            DrawColoredPolygon(poly, new Color(color, selected ? .23f : region.Owner == "" ? 0 : .055f));
+            if (selected) DrawPolyline([poly[0], poly[1], poly[2], poly[3], poly[0]], new Color(NativeTheme.Jade, .85f), 1.8f, true);
+            if (hovered == region.Index) DrawColoredPolygon(poly, new Color(1, 1, 1, .16f));
+            foreach (var id in region.Neighbors)
+            {
+                var neighbor = World.Regions.Single(r => r.Id == id);
+                if (neighbor.Index > region.Index) DrawLine(RegionCenter(region.Index), RegionCenter(neighbor.Index), new Color(NativeTheme.Gold, .25f), .8f, true);
+            }
         }
         foreach (var region in World.Regions)
         {
@@ -69,17 +74,24 @@ public partial class WorldMap : Control
             var selected = region.Id == Selected;
             var capital = owner?.Capital == region.Id;
             var detail = World.Regions.Count <= 36 || Zoom >= 2.2f || selected || capital;
-            if (!detail) { DrawCircle(point, 2.2f, new Color(color, .8f)); continue; }
-            DrawCircle(point + new Vector2(0, -22), selected ? 7 : 4.5f, color);
-            if (capital) DrawArc(point + new Vector2(0, -22), 10, 0, Mathf.Tau, 24, color, 1.3f, true);
-            if (selected) DrawArc(point + new Vector2(0, -22), 15, 0, Mathf.Tau, 32, NativeTheme.Paper, 1, true);
-            var name = region.Name;
-            var labelSize = NativeTheme.Body.GetStringSize(name, fontSize: 16);
-            DrawRect(new Rect2(point - new Vector2(labelSize.X / 2 + 6, 9), new Vector2(labelSize.X + 12, 44)), new Color(.025f, .07f, .09f, .80f));
-            DrawString(NativeTheme.Body, point + new Vector2(-labelSize.X / 2, 9), name, fontSize: 16, modulate: NativeTheme.Paper);
-            var subtitle = owner?.Name ?? "无主之地";
-            var subSize = NativeTheme.Body.GetStringSize(subtitle, fontSize: 11);
-            DrawString(NativeTheme.Body, point + new Vector2(-subSize.X / 2, 27), subtitle, fontSize: 11, modulate: color);
+            if (!detail) { DrawCircle(point, 2.4f, NativeTheme.Panel); DrawArc(point, 2.8f, 0, Mathf.Tau, 12, new Color(color.Darkened(.25f), .8f), 1, true); continue; }
+            var crest = point + new Vector2(0, -21);
+            DrawCircle(crest, capital ? 12 : 5, capital ? color.Darkened(.35f) : NativeTheme.Panel);
+            DrawArc(crest, capital ? 13 : 5, 0, Mathf.Tau, 28, NativeTheme.Brass, 1.4f, true);
+            if (capital) DrawString(NativeTheme.Display, crest + new Vector2(-7, 5), owner!.Sigil, fontSize: 15, modulate: NativeTheme.Panel);
+            if (selected) DrawArc(crest, capital ? 20 : 12, 0, Mathf.Tau, 32, NativeTheme.Jade, 1.6f, true);
+            var name = region.Name.Split('·').Last();
+            var fontSize = selected ? 16 : 13;
+            var labelSize = NativeTheme.Body.GetStringSize(name, fontSize: fontSize);
+            var subtitle = Zoom >= 2.2f || selected;
+            var plaque = new Rect2(point - new Vector2(labelSize.X / 2 + 9, 4), new Vector2(labelSize.X + 18, subtitle ? 40 : 25));
+            DrawRect(plaque, new Color(NativeTheme.DeepJade, .9f)); DrawRect(plaque, NativeTheme.Brass, false, .8f);
+            DrawString(NativeTheme.Body, point + new Vector2(-labelSize.X / 2, 14), name, fontSize: fontSize, modulate: NativeTheme.Panel);
+            if (subtitle)
+            {
+                var text = owner?.Name ?? "无主之地"; var size = NativeTheme.Body.GetStringSize(text, fontSize: 10);
+                DrawString(NativeTheme.Body, point + new Vector2(-size.X / 2, 29), text, fontSize: 10, modulate: new Color("#b8d2c7"));
+            }
         }
         foreach (var campaign in World.Campaigns)
         {

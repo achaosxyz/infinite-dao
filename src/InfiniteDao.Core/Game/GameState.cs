@@ -4,7 +4,7 @@ namespace InfiniteDao.Core.Game;
 
 public sealed class GameState
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public int Seed { get; set; }
     public uint RandomState { get; set; }
     public long Revision { get; set; }

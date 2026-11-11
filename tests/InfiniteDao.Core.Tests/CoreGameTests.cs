@@ -48,18 +48,18 @@ public sealed class CoreGameTests
         GameEngine.Command(world, new GameCommand("choose", Option: "prosperity"));
 
     [TestMethod]
-    public void CreationSupportsAllSixSectsAndEveryPolicy()
+    public void CreationSupportsAllTenSectsAndEveryPolicy()
     {
         var templates = WorldFactory.Templates();
-        Assert.HasCount(6, templates);
-        Assert.AreEqual(6, templates.Select(sect => sect.Id).Distinct().Count());
+        Assert.HasCount(10, templates);
+        Assert.AreEqual(10, templates.Select(sect => sect.Id).Distinct().Count());
         Assert.AreEqual(5, WorldFactory.Policies.Distinct().Count());
 
         foreach (var template in templates)
         {
             var world = WorldFactory.Create(template.Id, 17, "rules", "normal");
             Assert.AreEqual(template.Id, world.Player.Id);
-            Assert.HasCount(6, world.Sects);
+            Assert.HasCount(10, world.Sects);
             Assert.HasCount(192, world.Regions);
             Assert.IsTrue(world.AutoStewardship, "默认大世界应开启自动执事");
             Assert.HasCount(16, GameEngine.Members(world, world.Player));
@@ -80,7 +80,7 @@ public sealed class CoreGameTests
             .Select((sect, index) => new AgentDecision
             {
                 SectId = sect.Id,
-                Policy = WorldFactory.Policies[index],
+                Policy = WorldFactory.Policies[index % WorldFactory.Policies.Length],
                 Reason = "按宗门策略推进。"
             }).ToList();
         GameEngine.ApplyDecisions(strategyWorld, proposals);
@@ -726,6 +726,7 @@ public sealed class CoreGameTests
         world.NextEventMonth = 1000;
         foreach (var sect in world.Sects)
         {
+            sect.Policy = "balanced";
             sect.Target = "";
             if (sect.Id != world.PlayerId) sect.Stones = 0;
             foreach (var person in GameEngine.Members(world, sect)) person.Progress = 0;

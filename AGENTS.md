@@ -29,7 +29,7 @@
 - `docs/design/`：设计 SSOT、核心设计和按模块加载的 `MODULE.md`。
 - `docs/`：文档索引、目录说明、SOP、玩家指南与验证边界。
 - `config/`：公共示例与本地私密 LLM 配置。
-- `tools/`：环境定位、原生启动、导出和辅助验证脚本。
+- `tools/`：环境定位、原生启动、导出、美术资源处理和辅助验证脚本。
 - `.github/workflows/`：develop/main 提交检查及通过检查后的 Windows 构建发布。
 - `artifacts/`：工具、存档、验证证据和发布产物，不作为源代码提交。
 - `README.md`、`README_EN.md`：面向玩家的中英文项目说明。

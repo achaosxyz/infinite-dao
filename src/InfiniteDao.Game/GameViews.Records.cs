@@ -33,7 +33,8 @@ public partial class GameClient
                 var sect = state.Sects.SingleOrDefault(s => s.Id == person.SectId); var card = Stack(10); var profile = Row(15);
                 var portrait = Portrait(portraits, person.Portrait, 82, 100); if (!person.Alive) portrait.Modulate = new Color(.5f, .55f, .55f); profile.AddChild(portrait);
                 var info = Stack(5); info.AddChild(Heading(person.Name + (person.Alive ? "" : " · 已故"), 23, person.Alive ? Paper : Muted));
-                info.AddChild(Text($"{sect?.Name ?? "散修"} · {person.Role} · {WorldFactory.RealmNames[person.Realm]}", 13, sect is null ? Muted : new Color(sect.Color)));
+                var role = person.Role == "掌门" ? person.Alive && sect?.LeaderId == person.Id ? "现任掌门" : "历任掌门" : person.Role;
+                info.AddChild(Text($"{sect?.Name ?? "散修"} · {role} · {WorldFactory.RealmNames[person.Realm]}", 13, sect is null ? Muted : new Color(sect.Color).Darkened(.4f)));
                 info.AddChild(Text($"{person.AgeMonths / 12} 岁 / 寿元 {WorldFactory.Lifespans[person.Realm]}   ·   资质 {person.Potential}   ·   忠诚 {person.Loyalty}", 12, Muted));
                 info.AddChild(Text($"{CultivationText(person)}   ·   伤势 {person.Injury}   ·   {person.Temperament}", 12, person.Injury > 40 ? Cinnabar : Muted, true)); profile.AddChild(info); card.AddChild(profile);
                 var actions = Row(); actions.AddChild(Button("生平与修行", "person-" + person.Id, () => ShowPerson(person)));
@@ -55,7 +56,10 @@ public partial class GameClient
 
     private void ShowPerson(Cultivator person)
     {
-        var content = Stack(18); var row = Row(24); row.AddChild(Portrait(portraits, person.Portrait, 180, 180)); var facts = Stack(10);
+        var content = Stack(18); var row = Row(24); var picture = Portrait(portraits, person.Portrait, 196, 294);
+        if (!person.Alive) picture.Modulate = new Color(.65f, .68f, .65f); row.AddChild(picture); var facts = Stack(10);
+        var sect = world!.Sects.SingleOrDefault(s => s.Id == person.SectId);
+        if (sect is not null) { var identity = Row(9); identity.AddChild(Emblem(sect, 38)); identity.AddChild(Text(sect.Name, 15, DeepJade)); facts.AddChild(identity); }
         facts.AddChild(Heading(person.Name, 32)); facts.AddChild(Text($"{WorldFactory.RealmNames[person.Realm]} · {person.Role} · {(person.Alive ? "在世" : "故去")}", 16, Gold));
         facts.AddChild(Text($"所修功法：{person.Technique}\n资质 {person.Potential} · 忠诚 {person.Loyalty}\n{CultivationText(person)}\n伤势 {person.Injury} · 战功 {person.Kills} · 心性 {person.Temperament}", 14, Paper, true)); row.AddChild(facts); content.AddChild(row);
         content.AddChild(Text(person.Biography, 16, Paper, true));
@@ -78,13 +82,16 @@ public partial class GameClient
 
     private Control DiplomacyView()
     {
-        var state = world!; var view = Section("诸宗风云", "各宗依各自战略自行经营、交涉与征伐。「远交近攻」会自动经营五年盟约，最终仍须灭掉其余五宗。");
+        var state = world!; var view = Section("诸宗风云", $"各宗依战略自行经营、交涉与征伐。「远交近攻」经营五年盟约，最终仍须统一其余{state.Sects.Count - 1}宗道统。");
         var list = Stack(12);
         foreach (var sect in state.Sects.Where(s => s.Id != state.PlayerId).OrderByDescending(s => !s.Eliminated))
         {
-            var card = Stack(12); var row = Row(20); row.AddChild(Portrait(portraits, sect.Portrait, 100, 100)); var info = Stack(5);
+            var card = Stack(12); var row = Row(16); row.AddChild(Emblem(sect, 60));
+            var leader = state.People.SingleOrDefault(p => p.Id == sect.LeaderId && p.Alive);
+            if (leader is not null) row.AddChild(Portrait(portraits, leader.Portrait, 75, 90)); var info = Stack(5);
             var relation = state.Player.Relations.GetValueOrDefault(sect.Id); var truce = state.Player.Truces.GetValueOrDefault(sect.Id) - state.Month;
-            info.AddChild(Heading(sect.Name + (sect.Eliminated ? " · 道统已断" : sect.Exiled ? " · 流亡" : ""), 25, new Color(sect.Color)));
+            info.AddChild(Heading(sect.Name + (sect.Eliminated ? " · 道统已断" : sect.Exiled ? " · 流亡" : ""), 25, new Color(sect.Color).Darkened(.4f)));
+            if (leader is not null) info.AddChild(Text($"现任掌门 · {leader.Name} · {WorldFactory.RealmNames[leader.Realm]}", 12, Muted));
             info.AddChild(Text($"关系 {relation:+0;-0;0}  ·  {(truce > 0 ? $"盟约余 {truce} 月" : "无盟约")}  ·  策略：{Policy(sect.Policy)}", 13, Gold));
             info.AddChild(Text($"战力 {GameEngine.Power(state, sect)}  /  在世门徒 {GameEngine.Members(state, sect).Count}  /  领地 {GameEngine.Lands(state, sect).Count}\n灵石 {sect.Stones} · 灵材 {sect.Herbs} · 道藏 {sect.Doctrine} · 军阵 {sect.Training} · 安定 {sect.Stability}", 13, Muted, true)); row.AddChild(info);
             var actions = Stack(8); actions.SizeFlagsHorizontal = SizeFlags.Fill;

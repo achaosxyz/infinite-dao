@@ -25,7 +25,7 @@ public static partial class GameEngine
             : Members(world, defender).Where(p => !IsAway(world, p.Id)).OrderByDescending(p => p.Realm).ThenBy(p => p.Id).Select(p => new Combatant(p)).ToList();
         var formation = (1 + region.Fort * .12) * defenseBonus;
         if (defender?.Id == world.PlayerId) formation *= world.Difficulty == "story" ? 1.2 : world.Difficulty == "hard" ? .95 : 1.05;
-        double SectBonus(Sect sect) => (1 + sect.Training * .09) * (sect.Trait == "sword" ? 1.12 : sect.Trait == "fire" ? 1.08 : 1)
+        double SectBonus(Sect sect) => (1 + sect.Training * .09) * TraitCombatMultiplier(sect)
             * (.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004)
             * (1 + Math.Min(.25, world.Relics.Where(r => r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power) / 600d));
         var attackBonus = SectBonus(attacker) * supply * (1 + attacker.Intel * .04) * (tactic == "fierce" ? 1.25 : tactic == "careful" ? .9 : 1);

@@ -19,7 +19,7 @@ public partial class GameClient : Control
     private GameState? world;
     private ModelConnectionStatus model = new(false, "high", 0, 0);
     private Texture2D landscape = null!;
-    private Texture2D portraits = null!;
+    private Texture2D[] portraits = [];
     private Control surface = null!;
     private Control? overlay;
     private Label? statusLabel;
@@ -64,7 +64,7 @@ public partial class GameClient : Control
             model = session.ModelStatus();
             if (!model.Configured) mode = "rules";
             landscape = GD.Load<Texture2D>("res://Assets/qinglan-world.png");
-            portraits = GD.Load<Texture2D>("res://Assets/sect-leaders.png");
+            portraits = Enumerable.Range(0, WorldFactory.PortraitCount).Select(i => GD.Load<Texture2D>($"res://Assets/cultivator-{i:00}.png")).ToArray();
             hasSave = File.Exists(Path.Combine(saves ?? Path.Combine(root, "artifacts", "game", "saves"), "auto.json"));
             Render();
             if (verification) BeginNativeVerification();
@@ -362,5 +362,5 @@ public partial class GameClient : Control
     private void CloseOverlay() { if (overlay is null) return; RemoveChild(overlay); overlay.QueueFree(); overlay = null; }
     private void ShowMessage(string title, string message) { var text = Text(message, wrap: true); text.CustomMinimumSize = new Vector2(700, 0); ShowOverlay(title, text); }
 
-    private void ShowHelp() => ShowMessage("掌门手札", "一、处理开宗之议后，世界自动演进。你只定战略方向，可重点培养三名门人，安排更高境护道人。纳新、建设、传功、疗伤与战争筹备均自动进行。\n\n二、十二府192处灵地。点击地图查看产出、阵法与边界。战争持续数年，月月供给；按实际门人逐一交锋，低一大境界伤害仅12%，总战力不代表胜负。\n\n三、门人自动修行与历练；突破须修龄，历练一至三年。护道人须实际同行，可能受伤或殉身；历练者不可同时出征。史书与人物资料保留亡者。\n\n四、各宗Agent独立在后台按需规划，默认最多10个同时运行，不阻塞时间；等待时沿用已有战略。返回计划须通过当前世界校验。调用可能持续计费；失败自动重试3次，仍失败会明确切换离线并记入史书，可在设置中手动恢复智能世界。\n\n五、末座山门失守，幸存门徒携道统出逃，选薪火去向并择地重建，仍是同一世界。灭掉其余五宗即统一青岚。\n\n空格：暂停／继续；推演一载：逐月最多一年，遇事即停；Esc：关闭面板／暂停；Ctrl+S：保存档一。可以随时暂停检查世界、宗门与人物。");
+    private void ShowHelp() => ShowMessage("掌门手札", "一、处理开宗之议后，世界自动演进。你只定战略方向，可重点培养三名门人，安排更高境护道人。纳新、建设、传功、疗伤与战争筹备均自动进行。\n\n二、十二府192处灵地。点击地图查看产出、阵法与边界。战争持续数年，月月供给；按实际门人逐一交锋，低一大境界伤害仅12%，总战力不代表胜负。\n\n三、门人自动修行与历练；突破须修龄，历练一至三年。护道人须实际同行，可能受伤或殉身；历练者不可同时出征。史书与人物资料保留亡者。\n\n四、各宗Agent独立在后台按需规划，默认最多10个同时运行，不阻塞时间；等待时沿用已有战略。返回计划须通过当前世界校验。调用可能持续计费；失败自动重试3次，仍失败会明确切换离线并记入史书，可在设置中手动恢复智能世界。\n\n五、末座山门失守，幸存门徒携道统出逃，选薪火去向并择地重建，仍是同一世界。消灭其余宗门的道统即可统一青岚。\n\n空格：暂停／继续；推演一载：逐月最多一年，遇事即停；Esc：关闭面板／暂停；Ctrl+S：保存档一。可以随时暂停检查世界、宗门与人物。");
 }

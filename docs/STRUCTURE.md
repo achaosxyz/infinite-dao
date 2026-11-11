@@ -17,7 +17,7 @@
 | `tests/InfiniteDao.Agents.Tests/` | 配置、协议、工具、计数和 compact 测试 |
 | `tests/InfiniteDao.IntegrationTests/` | 会话、存档、CLI 与异步任务集成测试 |
 | `config/` | 公共配置示例、说明和不入库的本地私密配置 |
-| `tools/` | 固定版本环境安装、启动、导出、干净打包、文档检查及辅助验证脚本 |
+| `tools/` | 固定版本环境安装、启动、导出、干净打包、人物美术资源处理、文档检查及辅助验证脚本 |
 | `.github/workflows/` | develop/main 的 CI 检查和 main 的 Windows 连续构建发布 |
 | `docs/` | 玩家指南、索引、目录规范、开发/验证/发布流程及固定版本 Godot 许可文本 |
 | `docs/design/` | 当前设计 SSOT 与六个模块的 `MODULE.md` |

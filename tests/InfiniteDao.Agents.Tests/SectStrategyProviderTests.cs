@@ -19,7 +19,7 @@ public sealed class SectStrategyProviderTests
         var response = JsonSerializer.Serialize(new { type = "message", role = "assistant", stop_reason = "end_turn", content = new object[] { new { type = "thinking", thinking = "not included in returned proposals" }, new { type = "text", text = JsonSerializer.Serialize(new { decisions }) } }, usage = new { input_tokens = 90, output_tokens = 180 } });
         var handler = new FakeHandler(response); using var client = new HttpClient(handler);
         var result = await new SectStrategyProvider(client).DecideAsync(state,Settings(),CancellationToken.None);
-        Assert.HasCount(5,result.Decisions); Assert.AreEqual(270L,result.Tokens); Assert.AreEqual(1,handler.Calls);
+        Assert.HasCount(state.Sects.Count - 1,result.Decisions); Assert.AreEqual(270L,result.Tokens); Assert.AreEqual(1,handler.Calls);
         using var request = JsonDocument.Parse(handler.Request);
         Assert.AreEqual("high",request.RootElement.GetProperty("output_config").GetProperty("effort").GetString());
         Assert.AreEqual("adaptive",request.RootElement.GetProperty("thinking").GetProperty("type").GetString());

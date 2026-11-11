@@ -9,8 +9,9 @@ public static partial class GameEngine
         double[] weights = [5, 16, 48, 135, 350, 850];
         var basePower = Members(world, sect).Sum(p => weights[p.Realm] * (1 - p.Injury / 140d) * (0.8 + p.Potential / 200d));
         var relicPower = world.Relics.Where(r => r.Owner == sect.Id).OrderByDescending(r => r.Power).Take(3).Sum(r => r.Power);
-        return (int)((basePower + relicPower) * (1 + sect.Training * 0.09) * (sect.Trait == "sword" ? 1.12 : sect.Trait == "fire" ? 1.08 : 1) * (0.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004));
+        return (int)((basePower + relicPower) * (1 + sect.Training * 0.09) * TraitCombatMultiplier(sect) * (0.65 + sect.Stability / 220d) * (1 - sect.WarExhaustion * .004));
     }
+    private static double TraitCombatMultiplier(Sect sect) => sect.Trait switch { "sword" => 1.12, "fire" => 1.08, "thunder" => 1.10, _ => 1 };
     public static int Income(GameState world, Sect sect) => Lands(world, sect).Sum(r => 12 + r.Mine * 7 + r.Development * 8)
         * (sect.Policy == "prosperity" ? 14 : 10) / 10 + (sect.Trait == "forge" ? 15 : 0);
     public static int Upkeep(GameState world, Sect sect) => Members(world, sect).Sum(p => 1 + p.Realm * 2) + Math.Max(0, Lands(world, sect).Count - (8 + sect.Doctrine * 4)) * 12;
@@ -186,9 +187,9 @@ public static partial class GameEngine
 
     public static void Validate(GameState world)
     {
-        if (world.SchemaVersion != 1 || world.Sects.Count != 6 || world.MapColumns is < 4 or > 64 || world.MapRows is < 4 or > 64 || world.Regions.Count != world.MapColumns * world.MapRows || world.Month < 0 || world.Revision < 0) throw new GameRuleException("存档结构或版本无效。");
+        if (world.SchemaVersion is not (1 or 2) || world.SchemaVersion == 1 && world.Sects.Count != 6 || world.SchemaVersion == 2 && world.Sects.Count is not (6 or 10) || world.MapColumns is < 4 or > 64 || world.MapRows is < 4 or > 64 || world.Regions.Count != world.MapColumns * world.MapRows || world.Month < 0 || world.Revision < 0) throw new GameRuleException("存档结构或版本无效。");
         if (world.People.Count > 100000 || world.History.Count > 1000000 || world.Decisions.Count > 2000000) throw new GameRuleException("存档数据量超出安全限制。");
-        if (world.Sects.Select(s => s.Id).Distinct().Count() != 6 || world.Regions.Select(r => r.Id).Distinct().Count() != world.Regions.Count || world.Regions.Select(r => r.Index).Distinct().Count() != world.Regions.Count || world.People.Select(p => p.Id).Distinct().Count() != world.People.Count) throw new GameRuleException("实体身份重复。");
+        if (world.Sects.Select(s => s.Id).Distinct().Count() != world.Sects.Count || world.Regions.Select(r => r.Id).Distinct().Count() != world.Regions.Count || world.Regions.Select(r => r.Index).Distinct().Count() != world.Regions.Count || world.People.Select(p => p.Id).Distinct().Count() != world.People.Count) throw new GameRuleException("实体身份重复。");
         if (!world.Sects.Any(s => s.Id == world.PlayerId)) throw new GameRuleException("玩家宗门不存在。");
         foreach (var sect in world.Sects)
         {
@@ -199,13 +200,13 @@ public static partial class GameEngine
         foreach (var r in world.Regions)
             if ((r.Owner != "" && !world.Sects.Any(s => s.Id == r.Owner)) || r.Development is < 1 or > 5 || r.Fort is < 1 or > 5 || r.Population < 0 || r.Index < 0 || r.Index >= world.Regions.Count || r.Neighbors.Any(n => !world.Regions.Any(x => x.Id == n && x.Neighbors.Contains(r.Id)))) throw new GameRuleException("地图属性或所有权无效。");
         foreach (var p in world.People)
-            if (p.Realm is < 0 or > 5 || p.Injury is < 0 or > 100 || p.AgeMonths < 0 || p.RealmMonths < 0 || p.Progress is < 0 or > 120 || !world.Sects.Any(s => s.Id == p.SectId) && p.SectId != "") throw new GameRuleException("人物状态无效。");
+            if (p.Realm is < 0 or > 5 || p.Injury is < 0 or > 100 || p.AgeMonths < 0 || p.RealmMonths < 0 || p.Progress is < 0 or > 120 || p.Portrait < 0 || p.Portrait >= (world.SchemaVersion == 1 ? 6 : WorldFactory.PortraitCount) || !world.Sects.Any(s => s.Id == p.SectId) && p.SectId != "") throw new GameRuleException("人物状态无效。");
         var seen = new HashSet<int>();
         foreach (var e in world.History)
         {
             if (e.Causes.Any(c => !seen.Contains(c)) || !seen.Add(e.Id)) throw new GameRuleException("历史因果引用无效。");
         }
-        if (world.Campaigns.Count > 6 || world.Campaigns.Select(c => c.Attacker).Distinct().Count() != world.Campaigns.Count || world.Campaigns.Select(c => c.Target).Distinct().Count() != world.Campaigns.Count) throw new GameRuleException("远征军或战线重复。");
+        if (world.Campaigns.Count > world.Sects.Count || world.Campaigns.Select(c => c.Attacker).Distinct().Count() != world.Campaigns.Count || world.Campaigns.Select(c => c.Target).Distinct().Count() != world.Campaigns.Count) throw new GameRuleException("远征军或战线重复。");
         foreach (var c in world.Campaigns)
             if (!world.Sects.Any(s => s.Id == c.Attacker) || !world.Regions.Any(r => r.Id == c.Target) || c.Defender != "" && !world.Sects.Any(s => s.Id == c.Defender) || c.MonthsRemaining < 1 || c.MonthsRemaining > c.Duration || c.Duration < 2 || c.MonthlyStones < 0 || c.MonthlyHerbs < 0 || !double.IsFinite(c.Supply) || c.Supply is < 0 or > 1 || !double.IsFinite(c.DefenseBonus) || c.DefenseBonus is < 1 or > 1.45 || !seen.Contains(c.OriginEvent)) throw new GameRuleException("战役状态无效。");
         var deployed = world.Campaigns.SelectMany(c => c.Participants).ToList();

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="224" height="80" viewBox="0 0 224 80">
+  <defs><linearGradient id="jade" x2="1" y2="0"><stop stop-color="#E0EEE7"/><stop offset=".4" stop-color="#F6FAF8"/><stop offset="1" stop-color="#E9F2ED"/></linearGradient></defs>
+  <path d="M13 1H213L223 11V69L213 79H13L3 69V11Z" fill="url(#jade)" stroke="#91B4A5"/>
+  <path d="M16 6H209L218 15V65L209 74H16L8 65V15Z" fill="none" stroke="#CCDDD3" stroke-width=".7"/>
+  <path d="M4 18V62" stroke="#2e6d61" stroke-width="3"/>
+  <path d="m1 40 5-5 5 5-5 5Z" fill="#4D8B7A"/>
+  <path d="M202 6h8l8 8v7M202 74h8l8-8v-7" fill="none" stroke="#89AA9A"/>
+</svg>

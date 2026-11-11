@@ -13,11 +13,12 @@ Choose a cultivation sect, set its direction, and watch disciples grow and terri
 
 ## Features
 
-- **Six playable sects and 192 regions** across twelve prefectures, with difficulty and world-seed selection.
+- **Ten playable sects and 192 regions** across twelve prefectures, with difficulty and world-seed selection.
 - **Strategy-driven automation** for recruitment, construction, cultivation, journeys, and war preparations; you decide major events.
 - **Individual disciples** with focused training, accompanying guardians, breakthroughs, injuries, aging, and death.
-- **Years-long campaigns** resolved through supply, formations, relics, realm differences, and individual combat—not aggregate power alone.
-- **Exile and rebuilding** with surviving disciples and inherited knowledge; eliminate the other five sects to achieve unification.
+- **A unified jade-and-ivory HUD and 50 character illustrations**: sect crests identify factions; portraits stay with each character through succession and save/load. Existing six-sect saves migrate without changing their world.
+- **Years-long campaigns** where higher-realm cultivators can strike multiple lower-realm foes per round; supply, formations, relics, and injuries still affect the outcome—not aggregate power alone.
+- **Exile and rebuilding** with surviving disciples and inherited knowledge; eliminate all other sect lineages to achieve unification.
 - **Pause and inspect** the map, sects, people, diplomacy, treasury, and chronicles; use local automatic and manual saves.
 - **Optional background Agents** using an Anthropic-compatible API, independent public memories, and persistent plans.
 

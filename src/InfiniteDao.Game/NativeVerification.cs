@@ -23,6 +23,12 @@ public partial class GameClient
             modeControl.Select(1); modeControl.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
             hasSave = false; await Press("select-qingyun"); await Press("new-game");
             Check(world is { Mode: "rules", PendingEvent.Type: "inauguration" }, "New campaign must open its council."); Screenshot("council");
+            Check(world!.Sects.Count == 10 && world.People.Select(p => p.Portrait).Distinct().Count() == WorldFactory.PortraitCount, "Ten sects must start with the complete balanced character pool.");
+            Check(portraits.Length == 50 && portraits.All(p => p is not null && p.GetWidth() == 512 && p.GetHeight() == 768), "All fifty standalone character assets must be imported at production dimensions.");
+            checks.Add("ten sects, fifty imported character textures, and independent persistent portrait assignments");
+            CheckHudLayout();
+            var openingWindowSize = GetWindow().Size; GetWindow().Size = new Vector2I(1100, 700); await Frames(6);
+            CheckHudLayout(); Screenshot("council-small"); GetWindow().Size = openingWindowSize; await Frames(6);
             await SelectNativeOption("time-speed", 2);
             Check(secondsPerMonth == .05, "The speed popup must apply the selected speed during a pending council.");
             await SelectNativeOption("time-speed", 1);
@@ -39,12 +45,38 @@ public partial class GameClient
             Check(paused, "Space must pause time.");
             var month = world!.Month; await Frames(15); Check(world.Month == month, "Paused world must not tick."); checks.Add("new game, council choices, keyboard pause and inspect");
             await Press("nav-map");
-            await ClickRegion(0); Check(selectedRegion == "r01", "Map input must select the clicked region."); Screenshot("world");
+            await ClickRegion(0); Check(selectedRegion == "r01", "Map input must select the clicked region.");
+            await ClickRegion(world.Regions.Single(r => r.Id == world.Player.Capital).Index);
+            Check(selectedRegion == world.Player.Capital, "The selected own capital must expose its current leader and regional vignette."); Screenshot("world");
             var zoomMap = FindControl<WorldMap>(_ => true); var zoomPoint = zoomMap.GetGlobalTransform() * (zoomMap.Size / 2);
             Input.ParseInputEvent(new InputEventMouseButton { Position = zoomPoint, GlobalPosition = zoomPoint, ButtonIndex = MouseButton.WheelUp, Pressed = true }); await Frames();
-            Check(mapZoom > 1, "Mouse wheel must zoom the native map."); await Press("reset-map"); Check(mapZoom == 1, "Map reset must restore the whole world.");
+            // Complete the synthetic gesture so the map does not retain the viewport's mouse focus.
+            Input.ParseInputEvent(new InputEventMouseButton { Position = zoomPoint, GlobalPosition = zoomPoint, ButtonIndex = MouseButton.WheelUp, Pressed = false }); await Frames();
+            Check(mapZoom > 1, "Mouse wheel must zoom the native map."); var toolbarSelection = selectedRegion;
+            await ClickNativeButton("reset-map"); Check(selectedRegion == toolbarSelection, "Map toolbar clicks must not select an underlying region.");
+            Check(mapZoom == 1, "Map reset must restore the whole world.");
+            await ClickNativeButton("zoom-in"); Check(mapZoom > 1, "A real mouse click on zoom-in must change the map scale.");
+            var zoomedScale = mapZoom; await ClickNativeButton("zoom-out"); Check(mapZoom < zoomedScale, "A real mouse click on zoom-out must reduce the map scale.");
+            await ClickNativeButton("zoom-in"); await ClickNativeButton("reset-map");
+            Check(mapZoom == 1 && mapPan == Vector2.Zero, "Reset map must restore its viewport."); Screenshot("world");
+            await Press("region-details"); Check(overlay is not null, "Region dossier must open from the inspector.");
+            var capital = world.Regions.Single(r => r.Id == world.Player.Capital);
+            Check(overlay!.FindChildren("*", "Label", true, false).OfType<Label>().Any(label => label.Text == capital.Description), "Region dossier must retain the full regional description.");
+            Screenshot("region-detail"); await Press("region-" + capital.Neighbors[0]);
+            Check(overlay is null && selectedRegion == capital.Neighbors[0], "Adjacent-region navigation must close the dossier and select the real neighbor.");
+            await ClickRegion(capital.Index);
+            var mapLeader = world.People.Single(p => p.Id == world.Player.LeaderId);
+            await Press("map-leader-" + mapLeader.Id);
+            Check(overlay is not null && overlay.FindChildren("*", "TextureRect", true, false).OfType<TextureRect>().Any(picture => picture.Texture == portraits[mapLeader.Portrait]), "Map leader biography must display the current person's assigned portrait.");
+            await Press("close-dialog");
+            var recent = world.History.Last(e => e.Sects.Contains(world.PlayerId));
+            await Press("chronicle-" + recent.Id); Check(overlay is not null, "Chronicle ticker must open the real public event."); await Press("close-dialog");
+            var originalSize = GetWindow().Size; GetWindow().Size = new Vector2I(1100, 700); await Frames(6); Screenshot("world-small");
+            CheckHudLayout();
+            GetWindow().Size = originalSize; await Frames(6); checks.Add("map dock controls, region dossier, public chronicle ticker and minimum-window HUD");
             foreach (var destination in new[] { "sect", "people", "diplomacy", "treasury", "history" })
-            { await Press("nav-" + destination); if (destination is "people" or "sect") Screenshot(destination); }
+            { await Press("nav-" + destination); CheckHudLayout(); Screenshot(destination); }
+            await Press("nav-people"); await Press("person-" + world.Player.LeaderId); Screenshot("portrait-detail"); await Press("close-dialog");
             await Press("settings"); Check(overlay is not null, "Native settings must open."); await Press("close-dialog"); checks.Add("native map input and all six inspection panels");
             var saved = world.Copy(); await Press("saves"); await Press("save-one");
             await Press("advance"); Check(world!.Month == saved.Month + 12, "Advance button must settle one year, month by month.");
@@ -108,7 +140,7 @@ public partial class GameClient
             finale.Player.Policy = "expansion"; finale.Player.Stones = 1_000_000; finale.Player.Herbs = 1_000_000;
             await SetVerificationWorld(finale);
             for (var year = 0; year < 15 && world!.Status == "playing"; year++) await Press("advance");
-            Check(world!.Status == "victory" && world.Sects.Count(s => s.Eliminated) == 5 && world.BattleReports.Count > 0, "Final-gate fixture must reach victory through real campaign resolution.");
+            Check(world!.Status == "victory" && world.Sects.Count(s => s.Eliminated) == world.Sects.Count - 1 && world.BattleReports.Count > 0, "Final-gate fixture must reach victory through real campaign resolution.");
             var victory = world.Copy(); page = "ending"; Render(); await Frames(3); Screenshot("victory");
             var campaign = new { standardOpening = opening, boundaryFixture = true, finaleMonths = victory.Month, extinguished = victory.Sects.Count(s => s.Eliminated) };
             checks.Add("explicit final-gate fixture: years-long campaign, individual combat, extinction, victory screen and native save/load");
@@ -136,15 +168,15 @@ public partial class GameClient
                 CloseOverlay(); Run(() => session.NewGame("qingyun", 8192, "llm", "normal", lifetime.Token), "真实模型开宗议事验证");
                 await WaitForNativeAction("live-council");
                 var deadline = Time.GetTicksMsec() + 600_000;
-                while ((world!.PendingEvent?.NarrativeSource != "llm" || world.AgentMemories.Count != 5 || session.HasBackgroundWork) && Time.GetTicksMsec() < deadline)
+                while ((world!.PendingEvent?.NarrativeSource != "llm" || world.AgentMemories.Count != world.Sects.Count - 1 || session.HasBackgroundWork) && Time.GetTicksMsec() < deadline)
                 {
                     Check(world.Mode == "llm", "Real provider verification switched offline: " + world.AgentStatus);
                     await Frames(1);
                 }
                 Check(world!.PendingEvent?.NarrativeSource == "llm", "Live council must be narrated by the model.");
                 await Press("choose-expansion"); Advance(); await WaitForNativeAction("live-month");
-                Check(world!.Month == 1 && world.Decisions.Count(d => d.Source == "llm") == 5, "Native LLM advance must produce five valid rival decisions.");
-                Check(world.AgentMemories.Count == 5 && world.AgentMemories.All(m => m.Plan is not null && m.Conversation.Count == 2), "Each rival must persist a public conversation and accepted plan.");
+                Check(world!.Month == 1 && world.Decisions.Count(d => d.Source == "llm") == world.Sects.Count - 1, "Native LLM advance must produce a valid decision for every rival.");
+                Check(world.AgentMemories.Count == world.Sects.Count - 1 && world.AgentMemories.All(m => m.Plan is not null && m.Conversation.Count == 2), "Each rival must persist a public conversation and accepted plan.");
                 var requests = world.ModelRequests; Advance(); await WaitForNativeAction("live-plan-reuse");
                 Check(world!.Month == 2 && world.ModelRequests == requests, "A quiet month must reuse existing plans without a model request.");
                 page = "diplomacy"; Render(); await Press("agent-memory-" + world.AgentMemories[0].SectId); Screenshot("agent-memory"); CloseOverlay();
@@ -182,12 +214,58 @@ public partial class GameClient
         await Frames();
     }
 
+    private async Task ClickNativeButton(string key)
+    {
+        await Frames();
+        var button = FindControl<Button>(n => n.HasMeta("action") && n.GetMeta("action").AsString() == key && n.IsVisibleInTree());
+        Check(!button.Disabled, "Native button is disabled: " + key);
+        var point = button.GetGlobalTransform() * (button.Size / 2);
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = point, GlobalPosition = point }); await Frames();
+        Input.ParseInputEvent(new InputEventMouseButton { Position = point, GlobalPosition = point, ButtonIndex = MouseButton.Left, ButtonMask = MouseButtonMask.Left, Pressed = true }); Input.FlushBufferedEvents(); await Frames();
+        Input.ParseInputEvent(new InputEventMouseButton { Position = point, GlobalPosition = point, ButtonIndex = MouseButton.Left, Pressed = false }); await Frames();
+        await WaitForNativeAction(key);
+    }
+
     private async Task WaitForNativeAction(string key)
     {
         var deadline = Time.GetTicksMsec() + 600_000;
         while (busy && Time.GetTicksMsec() < deadline) await Frames(1);
         Check(!busy, "Native action timed out: " + key);
-        Check(overlay is null || key is "saves" or "settings" or "help" or "person-event" || key.StartsWith("guardian-", StringComparison.Ordinal) || key.StartsWith("agent-memory-", StringComparison.Ordinal), "Unexpected dialog after native action: " + key + "; " + notice);
+        Check(overlay is null || key is "saves" or "settings" or "help" or "region-details" || key.StartsWith("chronicle-", StringComparison.Ordinal) || key.StartsWith("person-", StringComparison.Ordinal) || key.StartsWith("map-leader-", StringComparison.Ordinal) || key.StartsWith("guardian-", StringComparison.Ordinal) || key.StartsWith("agent-memory-", StringComparison.Ordinal), "Unexpected dialog after native action: " + key + "; " + notice);
+    }
+
+    private void CheckHudLayout()
+    {
+        var viewport = GetViewport().GetVisibleRect();
+        List<string> keys = ["saves", "settings", "time-speed", "advance", "pause"];
+        if (world!.PendingEvent is not null) keys.Add("open-council");
+        if (page == "map") keys.AddRange(["campaigns", "zoom-out", "zoom-in", "reset-map"]);
+        foreach (var key in keys)
+        {
+            var control = FindControl<Button>(c => c.HasMeta("action") && c.GetMeta("action").AsString() == key);
+            var bounds = control.GetGlobalRect();
+            Check(bounds.Size.Y <= 52, "HUD controls must keep their compact height instead of stretching with the row: " + key);
+            Check(bounds.Position.X >= 0 && bounds.Position.Y >= 0 && bounds.End.X <= viewport.End.X + 1 && bounds.End.Y <= viewport.End.Y + 1, "HUD controls must remain inside the viewport: " + key);
+        }
+        var footer = FindControl<Control>(c => c.HasMeta("hud_footer")).GetGlobalRect();
+        foreach (var key in new[] { "time-speed", "advance", "pause" })
+        {
+            var bounds = FindControl<Button>(c => c.HasMeta("action") && c.GetMeta("action").AsString() == key).GetGlobalRect();
+            Check(Math.Abs(bounds.GetCenter().Y - footer.GetCenter().Y) <= 1, "Time controls must share the footer's vertical center: " + key);
+        }
+        Check(FindControl<Control>(c => c.HasMeta("hud_calendar")).Size.Y <= 88, "Calendar plaque must keep a compact height.");
+        var rail = FindControl<Control>(c => c.HasMeta("hud_rail")).GetGlobalRect();
+        var summary = FindControl<Control>(c => c.HasMeta("hud_rail_summary")).GetGlobalRect();
+        Check(summary.Position.X >= rail.Position.X + 15 && summary.End.Y <= rail.End.Y - 15, "Sect policy summary must stay inside the navigation frame with a safe inset.");
+        if (page == "map")
+        {
+            var titlePlate = FindControl<Control>(c => c.HasMeta("hud_map_title_plate")).GetGlobalRect();
+            var title = FindControl<Control>(c => c.HasMeta("hud_map_title")).GetGlobalRect();
+            Check(title.Position.X >= titlePlate.Position.X + 23 && title.Position.Y >= titlePlate.Position.Y + 15 && title.End.Y <= titlePlate.End.Y - 15,
+                "Map heading and subtitle must stay inside the title plaque's undecorated text area.");
+        }
+        foreach (var emblem in surface.FindChildren("*", "PanelContainer", true, false).OfType<PanelContainer>().Where(c => c.HasMeta("sect_emblem")))
+            Check(Math.Abs(emblem.Size.X - emblem.Size.Y) <= 1, "Sect emblems must remain square instead of stretching to fill a row or column.");
     }
 
     private T FindControl<T>(Func<T, bool> predicate) where T : Control

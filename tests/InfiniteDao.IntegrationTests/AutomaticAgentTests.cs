@@ -156,8 +156,13 @@ public sealed class AutomaticAgentTests
             await session.NewGame("qingyun", 8192, "llm", "normal", CancellationToken.None);
             await handler.BlockedPlan.WaitAsync(TimeSpan.FromSeconds(5));
 
-            await PumpUntilAsync(session, () => session.State!.AgentMemories.Count(m => m.SectId != "baicao") == 4
-                && session.State.AgentMemories.Where(m => m.SectId != "baicao").All(m => m.Plan is not null), TimeSpan.FromSeconds(12));
+            await PumpUntilAsync(session, () =>
+            {
+                var state = session.State!;
+                var expectedCompletedCount = state.Sects.Count(sect => sect.Id != state.PlayerId && sect.Id != "baicao");
+                return state.AgentMemories.Count(memory => memory.SectId != "baicao") == expectedCompletedCount
+                    && state.AgentMemories.Where(memory => memory.SectId != "baicao").All(memory => memory.Plan is not null);
+            }, TimeSpan.FromSeconds(12));
             Assert.IsTrue(session.HasBackgroundWork, "百草谷的独立计划仍在等待时，其他已完成宗门应保留完成状态。");
             Assert.AreEqual(1, handler.FailuresFor("chixia"), "一次失败后该宗门应由后台重试恢复。");
 

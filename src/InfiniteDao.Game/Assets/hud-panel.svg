@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><linearGradient id="paper" x2="0" y2="1"><stop stop-color="#FBFDFC"/><stop offset=".18" stop-color="#F7FAF8"/><stop offset="1" stop-color="#EDF3F0"/></linearGradient></defs>
+  <path d="M13 3H243L255 15V243L243 255H15L3 243V15Z" fill="#153e3b" opacity=".08"/>
+  <path d="M12 1H242L253 12V242L242 253H12L1 242V12Z" fill="url(#paper)" stroke="#A6BDB4" stroke-width="1.3"/>
+  <path d="M14 6H240L248 14V240L240 248H14L6 240V14Z" fill="none" stroke="#D7E3DC" stroke-width=".7"/>
+  <path d="M20 11H236M11 20V236M245 20V236M20 245H236" fill="none" stroke="#FFFFFF" stroke-width="1"/>
+  <g fill="none" stroke="#7D9D90" stroke-width="1.15" opacity=".75">
+    <path d="M7 23V15L15 7H23M10 26V18L18 10H26M233 7H241L249 15V23M230 10H238L246 18V26"/>
+    <path d="M7 231V239L15 247H23M10 228V236L18 244H26M233 247H241L249 239V231M230 244H238L246 236V228"/>
+  </g>
+  <g fill="#A6BDB4"><path d="m128 4 3 3-3 3-3-3Z"/><path d="m128 244 3 3-3 3-3-3Z"/></g>
+</svg>

@@ -50,7 +50,7 @@ public static partial class GameEngine
                     Log(world, "death", "仙路有尽", $"{sect.Name}的{person.Role}{person.Name}寿尽坐化，享年 {person.AgeMonths / 12} 岁。", [sect.Id]);
                     continue;
                 }
-                person.Injury = Math.Max(0, person.Injury - (IsAway(world, person.Id) ? 1 : sect.Trait == "herb" ? 5 : 3));
+                person.Injury = Math.Max(0, person.Injury - (IsAway(world, person.Id) ? 1 : sect.Trait is "herb" or "body" ? 5 : 3));
                 if (NeedsCultivation(person))
                 {
                     var herbCost = 1 + person.Realm;
@@ -58,6 +58,7 @@ public static partial class GameEngine
                     if (supplied) sect.Herbs -= herbCost;
                     var progress = (1 + person.Potential / 25 + sect.Doctrine) * (sect.Policy == "cultivation" ? 15 : 10) / 10;
                     if (sect.Trait == "ice") progress += 2;
+                    if (sect.Trait == "star") progress++;
                     if (person.Focused && sect.Herbs >= reservedHerbs + 3 + person.Realm * 2)
                     { sect.Herbs -= 3 + person.Realm * 2; progress *= 2; }
                     if (IsAway(world, person.Id)) progress = Math.Max(1, progress / 3);
